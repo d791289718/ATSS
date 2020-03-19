@@ -7,6 +7,27 @@ import os
 class DatasetCatalog(object):
     DATA_DIR = "datasets"
     DATASETS = {
+        "iSAID_train": {
+            "img_dir": "iSAID/train",
+            "ann_file": "iSAID/annotations/instances_train.json"
+        },
+        "iSAID_val": {
+            "img_dir": "iSAID/val",
+            "ann_file": "iSAID/annotations/instances_val.json"
+        },
+        "airbus_2018_train": {
+            "img_dir":'airbus_dataset/input/ships_train2018',
+            "ann_file":'airbus_dataset/input/annotations/instances_ships_train2018.json'
+        },
+        'HRSC_train': {
+            "img_dir":'HRSC2016/train',
+            "ann_file":'HRSC2016/annotations/instances_train.json'
+        },
+        'HRSC_val': {
+            "img_dir":'HRSC2016/val',
+            "ann_file":'HRSC2016//annotations/instances_val.json'
+        },
+        ######################
         "coco_2017_train": {
             "img_dir": "coco/train2017",
             "ann_file": "coco/annotations/instances_train2017.json"
@@ -112,7 +133,7 @@ class DatasetCatalog(object):
 
     @staticmethod
     def get(name):
-        if "coco" in name:
+        if ("coco" in name)  or ("HRSC" in name):
             data_dir = DatasetCatalog.DATA_DIR
             attrs = DatasetCatalog.DATASETS[name]
             args = dict(

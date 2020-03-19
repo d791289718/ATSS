@@ -54,6 +54,9 @@ def do_train(
     start_training_time = time.time()
     end = time.time()
     pytorch_1_1_0_or_later = is_pytorch_1_1_0_or_later()
+    print("++++++++++++++++++++++++++++++++++++++++++++")
+    print(data_loader)
+    print(len(data_loader))
     for iteration, (images, targets, _) in enumerate(data_loader, start_iter):
         data_time = time.time() - end
         iteration = iteration + 1

@@ -34,7 +34,9 @@ class GroupedBatchSampler(BatchSampler):
         self.drop_uneven = drop_uneven
 
         self.groups = torch.unique(self.group_ids).sort(0)[0]
-
+        print(self.groups)
+        print(self.group_ids)
+        print("=====================")
         self._can_reuse_batches = False
 
     def _prepare_batches(self):
