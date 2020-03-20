@@ -19,8 +19,8 @@ MODEL:
     REGRESSION_TYPE: 'POINT' # regressing from a 'BOX' or a 'POINT'
     NUM_CLASSES: 2 # ship or background
 DATASETS:
-  TRAIN: ("HRSC_train", )
-  TEST: ("HRSC_val", )
+  TRAIN: ("Kaggle_train", )
+  TEST: ("Kaggle_val", )
 INPUT:
   MIN_SIZE_TRAIN: (800,)
   MAX_SIZE_TRAIN: 1333

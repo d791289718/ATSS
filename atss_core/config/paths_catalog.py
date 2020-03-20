@@ -15,9 +15,17 @@ class DatasetCatalog(object):
             "img_dir": "iSAID/val",
             "ann_file": "iSAID/annotations/instances_val.json"
         },
-        "airbus_2018_train": {
-            "img_dir":'airbus_dataset/input/ships_train2018',
-            "ann_file":'airbus_dataset/input/annotations/instances_ships_train2018.json'
+        "Kaggle_train": {
+            "img_dir":'Kaggle/train',
+            "ann_file":'Kaggle/annotations/Kaggle_ship_train.json'
+        },
+        "Kaggle_val": {
+            "img_dir":'Kaggle/val',
+            "ann_file":'Kaggle/annotations/Kaggle_ship_val.json'
+        },
+        "Kaggle_test": {
+            "img_dir":'Kaggle/test',
+            "ann_file":'Kaggle/annotations/Kaggle_ship_test.json'
         },
         'HRSC_train': {
             "img_dir":'HRSC2016/train',
@@ -133,7 +141,7 @@ class DatasetCatalog(object):
 
     @staticmethod
     def get(name):
-        if ("coco" in name)  or ("HRSC" in name):
+        if ("coco" in name)  or ("HRSC" in name) or ("Kaggle" in name):
             data_dir = DatasetCatalog.DATA_DIR
             attrs = DatasetCatalog.DATASETS[name]
             args = dict(
