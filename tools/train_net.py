@@ -28,7 +28,9 @@ from atss_core.utils.miscellaneous import mkdir
 
 
 def train(cfg, local_rank, distributed):
+    # net建立
     model = build_detection_model(cfg)
+    # 设置device，模型转到device上
     device = torch.device(cfg.MODEL.DEVICE)
     model.to(device)
 
@@ -37,7 +39,9 @@ def train(cfg, local_rank, distributed):
             "SyncBatchNorm is only available in pytorch >= 1.1.0"
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
 
+    #优化器
     optimizer = make_optimizer(cfg, model)
+    # lr更新策略
     scheduler = make_lr_scheduler(cfg, optimizer)
 
     if distributed:
@@ -59,6 +63,7 @@ def train(cfg, local_rank, distributed):
     extra_checkpoint_data = checkpointer.load(cfg.MODEL.WEIGHT)
     arguments.update(extra_checkpoint_data)
 
+    # dataloader
     data_loader = make_data_loader(
         cfg,
         is_train=True,
@@ -68,6 +73,7 @@ def train(cfg, local_rank, distributed):
 
     checkpoint_period = cfg.SOLVER.CHECKPOINT_PERIOD
 
+    # 循环迭代
     do_train(
         model,
         data_loader,
@@ -144,20 +150,25 @@ def main():
     args.distributed = num_gpus > 1
 
     if args.distributed:
+        # 设定使用的GPU
         torch.cuda.set_device(args.local_rank)
+        # multiprocess初始化
         torch.distributed.init_process_group(
             backend="nccl", init_method="env://"
         )
         synchronize()
 
+    # 读取config信息，.freeze()防止后续修改参数
     cfg.merge_from_file(args.config_file)
     cfg.merge_from_list(args.opts)
     cfg.freeze()
 
+    # 创建输出dir
     output_dir = cfg.OUTPUT_DIR
     if output_dir:
         mkdir(output_dir)
 
+    # 打logger
     logger = setup_logger("atss_core", output_dir, get_rank())
     logger.info("Using {} GPUs".format(num_gpus))
     logger.info(args)
@@ -171,8 +182,10 @@ def main():
         logger.info(config_str)
     logger.info("Running with config:\n{}".format(cfg))
 
+    # 训练，返回模型
     model = train(cfg, args.local_rank, args.distributed)
 
+    # 测试
     if not args.skip_test:
         run_test(cfg, model, args.distributed)
 

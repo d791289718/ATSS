@@ -42,6 +42,7 @@ def synchronize():
     world_size = dist.get_world_size()
     if world_size == 1:
         return
+    # 同步
     dist.barrier()
 
 

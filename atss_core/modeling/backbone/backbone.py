@@ -7,9 +7,9 @@ from atss_core.modeling import registry
 from atss_core.modeling.make_layers import conv_with_kaiming_uniform
 from . import fpn as fpn_module
 from . import resnet
-from . import mobilenet
+from . import mobilenet 
 
-
+# register.BACKBONES是一个Register()类的实例化
 @registry.BACKBONES.register("R-50-C4")
 @registry.BACKBONES.register("R-50-C5")
 @registry.BACKBONES.register("R-101-C4")
@@ -100,4 +100,5 @@ def build_backbone(cfg):
         "cfg.MODEL.BACKBONE.CONV_BODY: {} are not registered in registry".format(
             cfg.MODEL.BACKBONE.CONV_BODY
         )
+    # registry.BACKBONES[cfg.MODEL.BACKBONE.CONV_BODY]是上面三个函数（model）其中一个
     return registry.BACKBONES[cfg.MODEL.BACKBONE.CONV_BODY](cfg)
