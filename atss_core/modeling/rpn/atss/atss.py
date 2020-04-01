@@ -139,6 +139,7 @@ class ATSSHead(torch.nn.Module):
             bbox_tower.append(nn.ReLU())
 
         self.add_module('cls_tower', nn.Sequential(*cls_tower))
+        # self._modules[name] = module
         self.add_module('bbox_tower', nn.Sequential(*bbox_tower))
         self.cls_logits = nn.Conv2d(
             in_channels, num_anchors * num_classes, kernel_size=3, stride=1,

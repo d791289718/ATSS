@@ -21,7 +21,7 @@ def make_optimizer(cfg, model):
             ))
             lr *= cfg.SOLVER.DCONV_OFFSETS_LR_FACTOR
         params += [{"params": [value], "lr": lr, "weight_decay": weight_decay}]
-
+    # TODO: 采用Adam优化器
     optimizer = torch.optim.SGD(params, lr, momentum=cfg.SOLVER.MOMENTUM)
     return optimizer
 

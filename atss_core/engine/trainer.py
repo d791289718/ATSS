@@ -50,7 +50,9 @@ def do_train(
     meters = MetricLogger(delimiter="  ")
     max_iter = len(data_loader)
     start_iter = arguments["iteration"]
+    # 设置模型为训练模式
     model.train()
+    # 计时
     start_training_time = time.time()
     end = time.time()
     pytorch_1_1_0_or_later = is_pytorch_1_1_0_or_later()

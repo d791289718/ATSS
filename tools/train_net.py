@@ -34,6 +34,7 @@ def train(cfg, local_rank, distributed):
     device = torch.device(cfg.MODEL.DEVICE)
     model.to(device)
 
+    # SynBatch
     if cfg.MODEL.USE_SYNCBN:
         assert is_pytorch_1_1_0_or_later(), \
             "SyncBatchNorm is only available in pytorch >= 1.1.0"
@@ -44,6 +45,7 @@ def train(cfg, local_rank, distributed):
     # lr更新策略
     scheduler = make_lr_scheduler(cfg, optimizer)
 
+    # distributed
     if distributed:
         model = torch.nn.parallel.DistributedDataParallel(
             model, device_ids=[local_rank], output_device=local_rank,
@@ -54,9 +56,13 @@ def train(cfg, local_rank, distributed):
     arguments = {}
     arguments["iteration"] = 0
 
+    # 保存的地址
     output_dir = cfg.OUTPUT_DIR
 
+    # 仅在主机保存
     save_to_disk = get_rank() == 0
+
+    # 预训练模型（MODEL.WEIGHT）参数加载
     checkpointer = DetectronCheckpointer(
         cfg, model, optimizer, scheduler, output_dir, save_to_disk
     )
@@ -71,6 +77,7 @@ def train(cfg, local_rank, distributed):
         start_iter=arguments["iteration"],
     )
 
+    # 每间隔多少个循环保存一次模型参数
     checkpoint_period = cfg.SOLVER.CHECKPOINT_PERIOD
 
     # 循环迭代
