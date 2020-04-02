@@ -30,31 +30,40 @@ class GeneralizedRCNN(nn.Module):
         self.rpn = build_rpn(cfg, self.backbone.out_channels)
         self.roi_heads = build_roi_heads(cfg, self.backbone.out_channels)
 
-    def forward(self, images, targets=None):
+    def forward(self, images, targets=None, rtargets=None, is_rotated=True):
         """
         Arguments:
-            images (list[Tensor] or ImageList): images to be processed
+            images (list[Tensor] or ImageList or Tensor(dim0=batch_size)): images to be processed
             targets (list[BoxList]): ground-truth boxes present in the image (optional)
+            rtargets (list[RotatedBoxList]): ground-truth boxes present in the image (optional)
 
         Returns:
             result (list[BoxList] or dict[Tensor]): the output from the model.
                 During training, it returns a dict[Tensor] which contains the losses.
-                During testing, it returns list[BoxList] contains additional fields
+                During testing, it returns list[BoxList] or list[RoatatedBoxList] contains additional fields
                 like `scores`, `labels` and `mask` (for Mask R-CNN models).
 
         """
-        if self.training and targets is None:
+        if self.training and (targets is None and rtargets is None):
             raise ValueError("In training mode, targets should be passed")
+        # list[Tensor] -> ImageList（self.tensors = Tensor(dim0=batch_size）
         images = to_image_list(images)
+        # images(Tensor) --通过backbone得到--> feature maps
         features = self.backbone(images.tensors)
-        proposals, proposal_losses = self.rpn(images, features, targets)
-        if self.roi_heads:
-            x, result, detector_losses = self.roi_heads(features, proposals, targets)
-        else:
-            # RPN-only models don't have roi_heads
-            x = features
-            result = proposals
-            detector_losses = {}
+        # fea_maps --通过rpn得到--> proposals proposal_loss
+        proposals, proposal_losses = self.rpn(images, features, targets，rtargets, is_rotated)
+        
+        ######################
+            
+            # roi_head得到
+            if self.roi_heads:
+                x, result, detector_losses = self.roi_heads(features, proposals, targets)
+            else:
+                # RPN-only models don't have roi_heads
+                x = features
+                result = proposals
+                detector_losses = {}
+        ########################
 
         if self.training:
             losses = {}
@@ -62,4 +71,5 @@ class GeneralizedRCNN(nn.Module):
             losses.update(proposal_losses)
             return losses
 
+        # loss_dict
         return result

@@ -1,5 +1,7 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
 import torch
+import cv2
+import math
 
 from .bounding_box import BoxList
 
@@ -115,6 +117,33 @@ def boxlist_iou(boxlist1, boxlist2):
     iou = inter / (area1[:, None] + area2 - inter)
     return iou
 
+# FIXME: 写了个寂寞
+def rotated_boxlist_iou(boxlist, rotated_boxlist):
+    """Compute the intersection over union of two set of boxes.
+    The box order must be (xmin, ymin, xmax, ymax).
+
+    Arguments:
+      box1: (BoxList) bounding boxes, sized [N,4].
+      box2: (RotatedBoxList) bounding boxes, sized [M,5].
+
+    Returns:
+      (tensor) iou, sized [N,M].
+    """
+    area1 = boxlist[2] * boxlist[3]
+    area2 = rotated_boxlist[2] * rotated_boxlist[3]
+    cx = (boxlist[0] + boxlist[2]) / 2.0
+    cy = (boxlist[1] + boxlist[3]) / 2.0
+    r1 = ((cx, cy), (boxlist[2] - boxlist[0] + 1, boxlist[3] - boxlist[1] + 1), 0)
+    r2 = ((rotated_boxlist[0], rotated_boxlist[1]),
+             (rotated_boxlist[2], rotated_boxlist[3]), math.degrees(rotated_boxlist[4]))
+    int_pts = cv2.rotatedRectangleIntersection(r1, r2)[1]
+    if int_pts is not None:
+        order_pts = cv2.convexHull(int_pts, returnPoints=True)
+        int_area = cv2.contourArea(order_pts)
+        # 计算出iou
+        ious = int_area * 1.0 / (area1 + area2 - int_area)
+    else:
+        ious = 0
 
 # TODO redundant, remove
 def _cat(tensors, dim=0):

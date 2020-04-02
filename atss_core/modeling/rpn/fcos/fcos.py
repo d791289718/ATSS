@@ -68,6 +68,10 @@ class FCOSHead(torch.nn.Module):
             in_channels, 4, kernel_size=3, stride=1,
             padding=1
         )
+        self.ang_pred = nn.Conv2d(
+            in_channels, 1, kernel_size=3, stride=1,
+            padding=1
+        )
         self.centerness = nn.Conv2d(
             in_channels, 1, kernel_size=3, stride=1,
             padding=1
@@ -76,7 +80,7 @@ class FCOSHead(torch.nn.Module):
         # initialization
         for modules in [self.cls_tower, self.bbox_tower,
                         self.cls_logits, self.bbox_pred,
-                        self.centerness]:
+                        self.ang_pred, self.centerness]:
             for l in modules.modules():
                 if isinstance(l, nn.Conv2d):
                     torch.nn.init.normal_(l.weight, std=0.01)
@@ -93,10 +97,14 @@ class FCOSHead(torch.nn.Module):
         logits = []
         bbox_reg = []
         centerness = []
+        ang_reg = []
+
+        # 不同level的feature map
         for l, feature in enumerate(x):
             cls_tower = self.cls_tower(feature)
             box_tower = self.bbox_tower(feature)
 
+            ang_reg.append(self.ang_pred(box_tower))
             logits.append(self.cls_logits(cls_tower))
             if self.centerness_on_reg:
                 centerness.append(self.centerness(box_tower))
@@ -104,6 +112,7 @@ class FCOSHead(torch.nn.Module):
                 centerness.append(self.centerness(cls_tower))
 
             bbox_pred = self.scales[l](self.bbox_pred(box_tower))
+
             if self.norm_reg_targets:
                 bbox_pred = F.relu(bbox_pred)
                 if self.training:
@@ -112,7 +121,7 @@ class FCOSHead(torch.nn.Module):
                     bbox_reg.append(bbox_pred * self.fpn_strides[l])
             else:
                 bbox_reg.append(torch.exp(bbox_pred))
-        return logits, bbox_reg, centerness
+        return logits, bbox_reg, ang_reg, centerness
 
 
 class FCOSModule(torch.nn.Module):
@@ -126,18 +135,20 @@ class FCOSModule(torch.nn.Module):
 
         head = FCOSHead(cfg, in_channels)
 
+        # in the test
         box_selector_test = make_fcos_postprocessor(cfg)
-
+        # in the training
         loss_evaluator = make_fcos_loss_evaluator(cfg)
+
         self.head = head
         self.box_selector_test = box_selector_test
         self.loss_evaluator = loss_evaluator
         self.fpn_strides = cfg.MODEL.FCOS.FPN_STRIDES
 
-    def forward(self, images, features, targets=None):
+    def forward(self, images, features, targets=None, rtargets=None, is_rotated=True):
         """
         Arguments:
-            images (ImageList): images for which we want to compute the predictions
+            images (ImageList): images for which we want to compute the predictions, only one image
             features (list[Tensor]): features computed from the images that are
                 used for computing the predictions. Each tensor in the list
                 correspond to different feature levels
@@ -149,14 +160,14 @@ class FCOSModule(torch.nn.Module):
             losses (dict[Tensor]): the losses for the model during training. During
                 testing, it is an empty dict.
         """
-        box_cls, box_regression, centerness = self.head(features)
+        box_cls, box_regression, ang_regression, centerness = self.head(features)
         locations = self.compute_locations(features)
- 
+
         if self.training:
             return self._forward_train(
-                locations, box_cls, 
-                box_regression, 
-                centerness, targets
+                locations, box_cls,
+                box_regression, ang_regression,
+                centerness, targets, rtargets
             )
         else:
             return self._forward_test(
@@ -164,15 +175,20 @@ class FCOSModule(torch.nn.Module):
                 centerness, images.image_sizes
             )
 
-    def _forward_train(self, locations, box_cls, box_regression, centerness, targets):
-        loss_box_cls, loss_box_reg, loss_centerness = self.loss_evaluator(
-            locations, box_cls, box_regression, centerness, targets
+    def _forward_train(
+        self, locations, box_cls, box_regression, ang_regression, centerness, targets, rtargets, is_rotated
+    ):
+        loss_box_cls, loss_box_reg, loss_centerness, loss_box_ang = self.loss_evaluator(
+            locations, box_cls, box_regression, ang_regression, centerness, targets, rtargets, is_rotated
         )
+
         losses = {
             "loss_cls": loss_box_cls,
             "loss_reg": loss_box_reg,
             "loss_centerness": loss_centerness
         }
+        if is_rotated:
+            losses["loss_ang"] = loss_box_ang
         return None, losses
 
     def _forward_test(self, locations, box_cls, box_regression, centerness, image_sizes):
@@ -183,6 +199,9 @@ class FCOSModule(torch.nn.Module):
         return boxes, {}
 
     def compute_locations(self, features):
+        """
+        Return: List[Tensor] 每一层feature-map的点对应原图的location
+        """
         locations = []
         for level, feature in enumerate(features):
             h, w = feature.size()[-2:]
@@ -194,6 +213,9 @@ class FCOSModule(torch.nn.Module):
         return locations
 
     def compute_locations_per_level(self, h, w, stride, device):
+        """
+        Return: Tensor , size = (num, 2) feature map的点对应原图的location(x, y) 
+        """
         shifts_x = torch.arange(
             0, w * stride, step=stride,
             dtype=torch.float32, device=device
@@ -207,6 +229,7 @@ class FCOSModule(torch.nn.Module):
         shift_y = shift_y.reshape(-1)
         locations = torch.stack((shift_x, shift_y), dim=1) + stride // 2
         return locations
+
 
 def build_fcos(cfg, in_channels):
     return FCOSModule(cfg, in_channels)

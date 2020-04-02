@@ -14,7 +14,7 @@ from .collate_batch import BatchCollator, BBoxAugCollator
 from .transforms import build_transforms
 
 
-def build_dataset(dataset_list, transforms, dataset_catalog, is_train=True):
+def build_dataset(dataset_list, transforms, dataset_catalog, is_train=True, is_rotated=True):
     """
     Arguments:
         dataset_list (list[str]): Contains the names of the datasets, i.e.,
@@ -29,7 +29,9 @@ def build_dataset(dataset_list, transforms, dataset_catalog, is_train=True):
             "dataset_list should be a list of strings, got {}".format(dataset_list)
         )
     datasets = []
+    # over json file
     for dataset_name in dataset_list:
+        # 准备工作
         data = dataset_catalog.get(dataset_name)
         factory = getattr(D, data["factory"])
         args = data["args"]
@@ -40,7 +42,11 @@ def build_dataset(dataset_list, transforms, dataset_catalog, is_train=True):
         if data["factory"] == "PascalVOCDataset":
             args["use_difficult"] = not is_train
         args["transforms"] = transforms
+        args["is_rotated"] = is_rotated
+
         # make dataset from factory
+        # dataset 是COCODataset的实例化对象，定义了__getitem__方法，返回（img, target, rtarget, idx）
+        # 一个json文件一个COCODataset
         dataset = factory(**args)
         datasets.append(dataset)
 
@@ -105,6 +111,7 @@ def make_batch_data_sampler(
 
 
 def make_data_loader(cfg, is_train=True, is_distributed=False, start_iter=0):
+    # 设置基本需要的参数
     num_gpus = get_world_size()
     if is_train:
         images_per_batch = cfg.SOLVER.IMS_PER_BATCH
@@ -144,19 +151,25 @@ def make_data_loader(cfg, is_train=True, is_distributed=False, start_iter=0):
     # but the code supports more general grouping strategy
     aspect_grouping = [1] if cfg.DATALOADER.ASPECT_RATIO_GROUPING else []
 
+    # 导入path_catelog读取dataset-list
     paths_catalog = import_file(
         "atss_core.config.paths_catalog", cfg.PATHS_CATALOG, True
     )
     DatasetCatalog = paths_catalog.DatasetCatalog
     dataset_list = cfg.DATASETS.TRAIN if is_train else cfg.DATASETS.TEST
 
+    # transform中的Compose类
+    transforms = None if not is_train and cfg.TEST.BBOX_AUG.ENABLED else build_transforms(cfg, is_train, cfg.INPUT.ROTATED)
     # If bbox aug is enabled in testing, simply set transforms to None and we will apply transforms later
-    transforms = None if not is_train and cfg.TEST.BBOX_AUG.ENABLED else build_transforms(cfg, is_train)
-    datasets = build_dataset(dataset_list, transforms, DatasetCatalog, is_train)
+
+    # list[COCODataset]，每个json-sile一个COCODataset实例类
+    datasets = build_dataset(dataset_list, transforms, DatasetCatalog, is_train, cfg.INPUT.ROTATED)
 
     data_loaders = []
     print(datasets)
+    # 每个dataset（即是每个json文件）都有一个dataloader
     for dataset in datasets:
+        # batch_sampler是每个batch的采样方式
         sampler = make_data_sampler(dataset, shuffle, is_distributed)
         batch_sampler = make_batch_data_sampler(
             dataset, sampler, aspect_grouping, images_per_gpu, num_iters, start_iter
@@ -164,6 +177,7 @@ def make_data_loader(cfg, is_train=True, is_distributed=False, start_iter=0):
         collator = BBoxAugCollator() if not is_train and cfg.TEST.BBOX_AUG.ENABLED else \
             BatchCollator(cfg.DATALOADER.SIZE_DIVISIBILITY)
         num_workers = cfg.DATALOADER.NUM_WORKERS
+        # nn.DataLoader
         data_loader = torch.utils.data.DataLoader(
             dataset,
             num_workers=num_workers,
@@ -171,6 +185,7 @@ def make_data_loader(cfg, is_train=True, is_distributed=False, start_iter=0):
             collate_fn=collator,
         )
         data_loaders.append(data_loader)
+
     if is_train:
         # during training, a single (possibly concatenated) data_loader is returned
         assert len(data_loaders) == 1

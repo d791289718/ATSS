@@ -54,7 +54,8 @@ class AnchorGenerator(nn.Module):
         else:
             if len(anchor_strides) != len(sizes):
                 raise RuntimeError("FPN should have #anchor_strides == #sizes")
-
+         
+            # cell_anchors是list[tensor, tensor]
             cell_anchors = [
                 generate_anchors(
                     anchor_stride,
@@ -64,6 +65,7 @@ class AnchorGenerator(nn.Module):
                 for anchor_stride, size in zip(anchor_strides, sizes)
             ]
         self.strides = anchor_strides
+        # nn.Module,cell_anchors注册为此Module的buffers
         self.cell_anchors = BufferList(cell_anchors)
         self.straddle_thresh = straddle_thresh
 
@@ -167,14 +169,21 @@ def make_anchor_generator_retinanet(config):
 
 
 def make_anchor_generator_atss(config):
+    # ANCHOR_SIZES: (64, 128, 256, 512, 1024)
     anchor_sizes = config.MODEL.ATSS.ANCHOR_SIZES
+    # ASPECT_RATIOS: (1.0,)
     aspect_ratios = config.MODEL.ATSS.ASPECT_RATIOS
+    # ANCHOR_STRIDES: (8, 16, 32, 64, 128)
     anchor_strides = config.MODEL.ATSS.ANCHOR_STRIDES
+    # STRADDLE_THRESH: 0
     straddle_thresh = config.MODEL.ATSS.STRADDLE_THRESH
+    # OCTAVE: 2.0
     octave = config.MODEL.ATSS.OCTAVE
+    # SCALES_PER_OCTAVE: 1
     scales_per_octave = config.MODEL.ATSS.SCALES_PER_OCTAVE
 
     assert len(anchor_strides) == len(anchor_sizes), "Only support FPN now"
+    # new_anchor_sizes = [(每一层的anchor的size, eg: 64, 66, 68), ()]
     new_anchor_sizes = []
     for size in anchor_sizes:
         per_layer_anchor_sizes = []

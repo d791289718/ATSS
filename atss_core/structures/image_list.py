@@ -33,12 +33,16 @@ def to_image_list(tensors, size_divisible=0):
     When tensors is an iterable of Tensors, it pads
     the Tensors with zeros so that they have the same
     shape
+    - size_divisible是要求改变长和宽使其有公约数
     """
     if isinstance(tensors, torch.Tensor) and size_divisible > 0:
         tensors = [tensors]
 
+    # is ImageList
     if isinstance(tensors, ImageList):
         return tensors
+
+    # is only one image
     elif isinstance(tensors, torch.Tensor):
         # single tensor shape can be inferred
         if tensors.dim() == 3:
@@ -46,8 +50,10 @@ def to_image_list(tensors, size_divisible=0):
         assert tensors.dim() == 4
         image_sizes = [tensor.shape[-2:] for tensor in tensors]
         return ImageList(tensors, image_sizes)
+
+    # is list[Tensor]
     elif isinstance(tensors, (tuple, list)):
-        max_size = tuple(max(s) for s in zip(*[img.shape for img in tensors]))
+        max_size = tuple(max(s) for s in zip(*[img.shape for img in tensors]))  # (w, h, c)每个维度最大的size
 
         # TODO Ideally, just remove this and let me model handle arbitrary
         # input sizs
@@ -60,6 +66,7 @@ def to_image_list(tensors, size_divisible=0):
             max_size[2] = int(math.ceil(max_size[2] / stride) * stride)
             max_size = tuple(max_size)
 
+        # 把图片放在左上角，其他地方补0
         batch_shape = (len(tensors),) + max_size
         batched_imgs = tensors[0].new(*batch_shape).zero_()
         for img, pad_img in zip(tensors, batched_imgs):

@@ -3,6 +3,7 @@ import torch
 import torchvision
 
 from atss_core.structures.bounding_box import BoxList
+from atss_core.structures.rotated_bbox import RotatedBoxList
 from atss_core.structures.segmentation_mask import SegmentationMask
 from atss_core.structures.keypoint import PersonKeypoints
 
@@ -36,9 +37,10 @@ def has_valid_annotation(anno):
     return False
 
 
+# 每个json file是一个COCODataset
 class COCODataset(torchvision.datasets.coco.CocoDetection):
     def __init__(
-        self, ann_file, root, remove_images_without_annotations, transforms=None
+        self, ann_file, root, remove_images_without_annotations, transforms=None, is_rotated=True
     ):
         super(COCODataset, self).__init__(root, ann_file)
         # sort indices for reproducible results
@@ -62,8 +64,10 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
         }
         self.id_to_img_map = {k: v for k, v in enumerate(self.ids)}
         self._transforms = transforms
+        self.is_rotated = is_rotated
 
     def __getitem__(self, idx):
+        # 一张图片和它里面的anno
         img, anno = super(COCODataset, self).__getitem__(idx)
 
         # filter crowd annotations
@@ -74,26 +78,41 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
         boxes = torch.as_tensor(boxes).reshape(-1, 4)  # guard against no boxes
         target = BoxList(boxes, img.size, mode="xywh").convert("xyxy")
 
+        # RotatedBoxList是一个image里所有的框框
+        rboxes = [obj["rbox"] for obj in anno]  # [[x, y, w, h, ang], [x2, y2, w2, h2, a2]...]
+        rboxes = torch.as_tensor(rboxes).reshape(-1, 5)
+        rtarget = RotatedBoxList(rboxes, img.size, mode="xywha")
+
         classes = [obj["category_id"] for obj in anno]
         classes = [self.json_category_id_to_contiguous_id[c] for c in classes]
         classes = torch.tensor(classes)
-        target.add_field("labels", classes)
 
-        # masks = [obj["segmentation"] for obj in anno]
-        # masks = SegmentationMask(masks, img.size, mode='poly')
-        # target.add_field("masks", masks)
+        # 添加到target的字典中 extra_fields
+        target.add_field("labels", classes)
+        rtarget.add_field("labels", classes)
+
+        if anno and "segmentation" in anno[0]:
+            masks = [obj["segmentation"] for obj in anno]
+            masks = SegmentationMask(masks, img.size, mode='poly')
+            target.add_field("masks", masks)
 
         if anno and "keypoints" in anno[0]:
             keypoints = [obj["keypoints"] for obj in anno]
             keypoints = PersonKeypoints(keypoints, img.size)
             target.add_field("keypoints", keypoints)
 
+        # 保证所有标注在图像大小范围内
         target = target.clip_to_image(remove_empty=True)
+        # TODO 给旋转框也做这个
 
+        # 处理图像和target的转化
         if self._transforms is not None:
-            img, target = self._transforms(img, target)
+            if self.is_rotated is False:
+                img, target = self._transforms(img, target)
+            else:
+                img, rtarget = self._transforms(img, rtarget)
 
-        return img, target, idx
+        return img, target, rtarget, idx
 
     def get_img_info(self, index):
         img_id = self.id_to_img_map[index]

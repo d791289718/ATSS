@@ -99,7 +99,8 @@ class FCOSLossComputation(object):
         inside_gt_bbox_mask = center_bbox.min(-1)[0] > 0
         return inside_gt_bbox_mask
 
-    def prepare_targets(self, points, targets):
+    def prepare_targets(self, points, targets, rtargets, is_rotated=True):
+        # 准备工作
         object_sizes_of_interest = [
             [-1, 64],
             [64, 128],
@@ -108,24 +109,33 @@ class FCOSLossComputation(object):
             [512, INF],
         ]
         expanded_object_sizes_of_interest = []
+
+        # over 不同feature level
         for l, points_per_level in enumerate(points):
+            # .前面的的type；.后面的data
             object_sizes_of_interest_per_level = \
-                points_per_level.new_tensor(object_sizes_of_interest[l])
+                points_per_level.new_tensor(object_sizes_of_interest[l])  # 拷贝了一份[-1， 64]
             expanded_object_sizes_of_interest.append(
-                object_sizes_of_interest_per_level[None].expand(len(points_per_level), -1)
+                object_sizes_of_interest_per_level[None].expand(len(points_per_level), -1)  # 3维
             )
 
-        expanded_object_sizes_of_interest = torch.cat(expanded_object_sizes_of_interest, dim=0)
+        expanded_object_sizes_of_interest = torch.cat(expanded_object_sizes_of_interest, dim=0)  # list[Tensor] -> Tensor
         num_points_per_level = [len(points_per_level) for points_per_level in points]
         self.num_points_per_level = num_points_per_level
-        points_all_level = torch.cat(points, dim=0)
-        labels, reg_targets = self.compute_targets_for_locations(
-            points_all_level, targets, expanded_object_sizes_of_interest
-        )
+        points_all_level = torch.cat(points, dim=0)  # list[Tensor] -> Tensor
+
+        if not is_rotated:
+            labels, reg_targets = self.compute_targets_for_locations(
+                points_all_level, targets, expanded_object_sizes_of_interest
+            )
+        else:
+            labels, reg_targets = self.compute_rotated_targets_for_locations(
+                points_all_level, rtargets, expanded_object_sizes_of_interest
+            )
 
         for i in range(len(labels)):
-            labels[i] = torch.split(labels[i], num_points_per_level, dim=0)
-            reg_targets[i] = torch.split(reg_targets[i], num_points_per_level, dim=0)
+            labels[i] = torch.split(labels[i], num_points_per_level, dim=0)  # Tensor -> list[Tensor]
+            reg_targets[i] = torch.split(reg_targets[i], num_points_per_level, dim=0)  # Tensor -> list[Tensor]
 
         labels_level_first = []
         reg_targets_level_first = []
@@ -144,6 +154,70 @@ class FCOSLossComputation(object):
             reg_targets_level_first.append(reg_targets_per_level)
 
         return labels_level_first, reg_targets_level_first
+
+    def compute_rotated_targets_for_locations(self, locations, rtargets, object_sizes_of_interest):
+        labels = []
+        reg_targets = []
+        xs, ys = locations[:, 0], locations[:, 1]
+
+        for im_i in range(len(rtargets)):
+            targets_per_im = rtargets[im_i]
+            assert targets_per_im.mode == "xywha"
+            bboxes = targets_per_im.rbbox
+            labels_per_im = targets_per_im.get_field("labels")
+            area = targets_per_im.area()
+
+            # 数学计算
+            dx = xs[:, None] - bboxes[:, 0][None]
+            dy = ys[:, None] - bboxes[:, 1][None]
+            theta = torch.atan(dy / dx) - bboxes[:, 4][None]
+            assert theta.size[1] == 1
+            dis = (dx.pow(2) + dy.pow(2)).sum(-1).sqrt()
+
+            dw = dis * torch.cos(theta)
+            dh = dis * torch.sin(theta)
+
+            t = w / 2 - dh
+            b = w / 2 + dh
+            l = h / 2 - dw
+            r = h / 2 + dw
+
+            reg_targets_per_im = torch.stack([l, t, r, b], dim=2)
+
+            if self.center_sampling_radius > 0:
+                is_in_boxes = self.get_sample_region(
+                    bboxes,
+                    self.fpn_strides,
+                    self.num_points_per_level,
+                    xs, ys,
+                    radius=self.center_sampling_radius
+                )
+            else:
+                # no center sampling, it will use all the locations within a ground-truth box
+                is_in_boxes = reg_targets_per_im.min(dim=2)[0] > 0
+
+            max_reg_targets_per_im = reg_targets_per_im.max(dim=2)[0]
+            # limit the regression range for each location
+            is_cared_in_the_level = \
+                (max_reg_targets_per_im >= object_sizes_of_interest[:, [0]]) & \
+                (max_reg_targets_per_im <= object_sizes_of_interest[:, [1]])
+
+            locations_to_gt_area = area[None].repeat(len(locations), 1)
+            locations_to_gt_area[is_in_boxes == 0] = INF
+            locations_to_gt_area[is_cared_in_the_level == 0] = INF
+
+            # if there are still more than one objects for a location,
+            # we choose the one with minimal area
+            locations_to_min_area, locations_to_gt_inds = locations_to_gt_area.min(dim=1)
+
+            reg_targets_per_im = reg_targets_per_im[range(len(locations)), locations_to_gt_inds]
+            labels_per_im = labels_per_im[locations_to_gt_inds]
+            labels_per_im[locations_to_min_area == INF] = 0
+
+            labels.append(labels_per_im)
+            reg_targets.append(reg_targets_per_im)
+
+        return labels, reg_targets
 
     def compute_targets_for_locations(self, locations, targets, object_sizes_of_interest):
         labels = []
@@ -205,23 +279,26 @@ class FCOSLossComputation(object):
                       (top_bottom.min(dim=-1)[0] / top_bottom.max(dim=-1)[0])
         return torch.sqrt(centerness)
 
-    def __call__(self, locations, box_cls, box_regression, centerness, targets):
+    def __call__(self, locations, box_cls, box_regression, ang_regression, centerness, targets, rtargets, is_rotated):
         """
         Arguments:
+            list的每个元素是不同图像产生的？
             locations (list[BoxList])
             box_cls (list[Tensor])
             box_regression (list[Tensor])
             centerness (list[Tensor])
             targets (list[BoxList])
+            rtargets(list[RotatedBoxList])
 
         Returns:
             cls_loss (Tensor)
             reg_loss (Tensor)
             centerness_loss (Tensor)
+            ang_loss(Tensor)
         """
-        N = box_cls[0].size(0)
+        N = box_cls[0].size(0)  # 不是样本个数，cls[0]
         num_classes = box_cls[0].size(1)
-        labels, reg_targets = self.prepare_targets(locations, targets)
+        labels, reg_targets = self.prepare_targets(locations, targets, rtargets, is_rotated)
 
         box_cls_flatten = []
         box_regression_flatten = []
@@ -279,7 +356,7 @@ class FCOSLossComputation(object):
             reduce_sum(centerness_flatten.new_tensor([0.0]))
             centerness_loss = centerness_flatten.sum()
 
-        return cls_loss, reg_loss, centerness_loss
+        return cls_loss, reg_loss, centerness_loss, ang_loss
 
 
 def make_fcos_loss_evaluator(cfg):

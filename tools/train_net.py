@@ -40,7 +40,7 @@ def train(cfg, local_rank, distributed):
             "SyncBatchNorm is only available in pytorch >= 1.1.0"
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
 
-    #优化器
+    # 优化器
     optimizer = make_optimizer(cfg, model)
     # lr更新策略
     scheduler = make_lr_scheduler(cfg, optimizer)
@@ -90,6 +90,7 @@ def train(cfg, local_rank, distributed):
         device,
         checkpoint_period,
         arguments,
+        cfg.INPUT.ROTATED,
     )
 
     return model

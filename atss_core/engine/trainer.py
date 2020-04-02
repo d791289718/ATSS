@@ -44,6 +44,7 @@ def do_train(
     device,
     checkpoint_period,
     arguments,
+    is_rotated,
 ):
     logger = logging.getLogger("atss_core.trainer")
     logger.info("Start training")
@@ -57,7 +58,8 @@ def do_train(
     end = time.time()
     pytorch_1_1_0_or_later = is_pytorch_1_1_0_or_later()
 
-    for iteration, (images, targets, _) in enumerate(data_loader, start_iter):
+    for iteration, (images, targets, rtargets, _) in enumerate(data_loader, start_iter):  # dim=0上遍历
+        # images, targets 是每个batch的 Tensor
         data_time = time.time() - end
         iteration = iteration + 1
         arguments["iteration"] = iteration
@@ -68,8 +70,10 @@ def do_train(
 
         images = images.to(device)
         targets = [target.to(device) for target in targets]
+        rtargets = [target.to(device) for target in rtargets]
 
-        loss_dict = model(images, targets)
+        # loss
+        loss_dict = model(images, targets=targets, rtargets=rtargets, is_rotated=is_rotated)
 
         losses = sum(loss for loss in loss_dict.values())
 

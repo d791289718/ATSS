@@ -104,6 +104,7 @@ class ATSSHead(torch.nn.Module):
         num_classes = cfg.MODEL.ATSS.NUM_CLASSES - 1
         num_anchors = len(cfg.MODEL.ATSS.ASPECT_RATIOS) * cfg.MODEL.ATSS.SCALES_PER_OCTAVE
 
+        # 4个卷积模块
         cls_tower = []
         bbox_tower = []
         for i in range(cfg.MODEL.ATSS.NUM_CONVS):
@@ -139,7 +140,7 @@ class ATSSHead(torch.nn.Module):
             bbox_tower.append(nn.ReLU())
 
         self.add_module('cls_tower', nn.Sequential(*cls_tower))
-        # self._modules[name] = module
+        # 等价于self._modules[name] = module
         self.add_module('bbox_tower', nn.Sequential(*bbox_tower))
         self.cls_logits = nn.Conv2d(
             in_channels, num_anchors * num_classes, kernel_size=3, stride=1,
@@ -147,6 +148,10 @@ class ATSSHead(torch.nn.Module):
         )
         self.bbox_pred = nn.Conv2d(
             in_channels, num_anchors * 4, kernel_size=3, stride=1,
+            padding=1
+        )
+        self.ang_pred = nn.Conv2d(
+            in_channels, num_anchors， kernel_size=3, stride=1,
             padding=1
         )
         self.centerness = nn.Conv2d(
@@ -157,7 +162,7 @@ class ATSSHead(torch.nn.Module):
         # initialization
         for modules in [self.cls_tower, self.bbox_tower,
                         self.cls_logits, self.bbox_pred,
-                        self.centerness]:
+                        self.ang_pred, self.centerness]:
             for l in modules.modules():
                 if isinstance(l, nn.Conv2d):
                     torch.nn.init.normal_(l.weight, std=0.01)
@@ -177,6 +182,9 @@ class ATSSHead(torch.nn.Module):
         logits = []
         bbox_reg = []
         centerness = []
+        ang_reg = []
+
+        # 被遍历的是不同scale的feature map
         for l, feature in enumerate(x):
             cls_tower = self.cls_tower(feature)
             box_tower = self.bbox_tower(feature)
@@ -188,8 +196,10 @@ class ATSSHead(torch.nn.Module):
                 bbox_pred = F.relu(bbox_pred)
             bbox_reg.append(bbox_pred)
 
+            ang_reg.append(self.ang_pred(feature))
+
             centerness.append(self.centerness(box_tower))
-        return logits, bbox_reg, centerness
+        return logits, bbox_reg, ang_reg, centerness
 
 
 class ATSSModule(torch.nn.Module):
@@ -201,20 +211,24 @@ class ATSSModule(torch.nn.Module):
         box_coder = BoxCoder(cfg)
         self.loss_evaluator = make_atss_loss_evaluator(cfg, box_coder)
         self.box_selector_test = make_atss_postprocessor(cfg, box_coder)
+        # anchor_generator is a nn.Module 类
         self.anchor_generator = make_anchor_generator_atss(cfg)
 
-    def forward(self, images, features, targets=None):
-        box_cls, box_regression, centerness = self.head(features)
+    def forward(self, images, features, targets=None,  rtargets=None, is_rotated=True):
+        box_cls, box_regression, ang_regression, centerness = self.head(features)
         anchors = self.anchor_generator(images, features)
  
         if self.training:
-            return self._forward_train(box_cls, box_regression, centerness, targets, anchors)
+            return self._forward_train(box_cls, box_regression, centerness,
+             targets, rtargets, is_rotated, anchors)
         else:
-            return self._forward_test(box_cls, box_regression, centerness, anchors)
+            return self._forward_test(box_cls, box_regression, centerness,
+             is_rotated, anchors)
 
-    def _forward_train(self, box_cls, box_regression, centerness, targets, anchors):
+    def _forward_train(self, box_cls, box_regression, centerness,
+     targets, rtargets, is_rotated, anchors):
         loss_box_cls, loss_box_reg, loss_centerness = self.loss_evaluator(
-            box_cls, box_regression, centerness, targets, anchors
+            box_cls, box_regression, centerness, targets, rtargers, is_rotated, anchors
         )
         losses = {
             "loss_cls": loss_box_cls,
