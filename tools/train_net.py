@@ -34,6 +34,7 @@ def train(cfg, local_rank, distributed):
     device = torch.device(cfg.MODEL.DEVICE)
     model.to(device)
 
+    # ? about multi gpu
     # SynBatch
     if cfg.MODEL.USE_SYNCBN:
         assert is_pytorch_1_1_0_or_later(), \
@@ -45,6 +46,7 @@ def train(cfg, local_rank, distributed):
     # lr更新策略
     scheduler = make_lr_scheduler(cfg, optimizer)
 
+    # ? about multi gpu
     # distributed
     if distributed:
         model = torch.nn.parallel.DistributedDataParallel(
@@ -157,6 +159,7 @@ def main():
     # num_gpus = 1
     args.distributed = num_gpus > 1
 
+    # ? about multiple gpu
     if args.distributed:
         # 设定使用的GPU
         torch.cuda.set_device(args.local_rank)

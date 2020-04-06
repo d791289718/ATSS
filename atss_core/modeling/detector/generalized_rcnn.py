@@ -36,6 +36,7 @@ class GeneralizedRCNN(nn.Module):
             images (list[Tensor] or ImageList or Tensor(dim0=batch_size)): images to be processed
             targets (list[BoxList]): ground-truth boxes present in the image (optional)
             rtargets (list[RotatedBoxList]): ground-truth boxes present in the image (optional)
+            is_rotated (bool): Rotated or not
 
         Returns:
             result (list[BoxList] or dict[Tensor]): the output from the model.
@@ -71,5 +72,5 @@ class GeneralizedRCNN(nn.Module):
             losses.update(proposal_losses)
             return losses
 
-        # loss_dict
+        # list[Boxlist]
         return result

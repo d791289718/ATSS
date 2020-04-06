@@ -21,15 +21,17 @@ class FCOSHead(torch.nn.Module):
             in_channels (int): number of channels of the input feature
         """
         super(FCOSHead, self).__init__()
-        # TODO: Implement the sigmoid version first.
         num_classes = cfg.MODEL.FCOS.NUM_CLASSES - 1
         self.fpn_strides = cfg.MODEL.FCOS.FPN_STRIDES
         self.norm_reg_targets = cfg.MODEL.FCOS.NORM_REG_TARGETS
         self.centerness_on_reg = cfg.MODEL.FCOS.CENTERNESS_ON_REG
+        self.centerness_independent = cfg.MODEL.FCOS.CENTERNESS_INDEPENDENT
         self.use_dcn_in_tower = cfg.MODEL.FCOS.USE_DCN_IN_TOWER
 
         cls_tower = []
         bbox_tower = []
+        centerness_tower = []
+
         for i in range(cfg.MODEL.FCOS.NUM_CONVS):
             if self.use_dcn_in_tower and \
                     i == cfg.MODEL.FCOS.NUM_CONVS - 1:
@@ -49,6 +51,7 @@ class FCOSHead(torch.nn.Module):
             )
             cls_tower.append(nn.GroupNorm(32, in_channels))
             cls_tower.append(nn.ReLU())
+
             bbox_tower.append(
                 conv_func(
                     in_channels,
@@ -62,8 +65,25 @@ class FCOSHead(torch.nn.Module):
             bbox_tower.append(nn.GroupNorm(32, in_channels))
             bbox_tower.append(nn.ReLU())
 
+            if self.centerness_independent:
+                centerness_tower.append(
+                    conv_func(
+                        in_channels,
+                        in_channels,
+                        kernel_size=3,
+                        stride=1,
+                        padding=1,
+                        bias=True
+                    )
+                )
+                centerness_tower.append(nn.GroupNorm(32, in_channels))
+                centerness_tower.append(nn.ReLU())
+
         self.add_module('cls_tower', nn.Sequential(*cls_tower))
         self.add_module('bbox_tower', nn.Sequential(*bbox_tower))
+        if self.centerness_independent:
+            self.add_module('centerness_tower', nn.Sequential(*centerness_tower))
+
         self.cls_logits = nn.Conv2d(
             in_channels, num_classes, kernel_size=3, stride=1,
             padding=1
@@ -89,6 +109,12 @@ class FCOSHead(torch.nn.Module):
                 if isinstance(l, nn.Conv2d):
                     torch.nn.init.normal_(l.weight, std=0.01)
                     torch.nn.init.constant_(l.bias, 0)
+        if self.centerness_independent:
+            for l in self.centerness_tower.modules():
+                if isinstance(l, nn.Conv2d):
+                    torch.nn.init.normal_(l.weight, std=0.01)
+                    torch.nn.init.constant_(l.bias, 0)
+
         # initialize the bias for focal loss
         prior_prob = cfg.MODEL.FCOS.PRIOR_PROB
         bias_value = -math.log((1 - prior_prob) / prior_prob)
@@ -96,7 +122,7 @@ class FCOSHead(torch.nn.Module):
 
         self.scales = nn.ModuleList([Scale(init_value=1.0) for _ in range(5)])
 
-    def forward(self, x):
+    def forward(self, x, is_rotated):
         logits = []
         bbox_reg = []
         centerness = []
@@ -112,8 +138,11 @@ class FCOSHead(torch.nn.Module):
             logits.append(self.cls_logits(cls_tower))
 
             # centerness
+            assert self.centerness_independent != self.centerness_on_reg, "centerness接在哪个tower下有问题"
             if self.centerness_on_reg:
                 centerness.append(self.centerness(box_tower))
+            elif self.centerness_independent:
+                centerness.append(self.centerness(self.centerness_tower(feature)))
             else:
                 centerness.append(self.centerness(cls_tower))
 
@@ -131,12 +160,14 @@ class FCOSHead(torch.nn.Module):
             bbox_pred = self.bbox_pred(box_tower)
             bbox_reg.append(F.relu(bbox_pred))
 
+            if is_rotated:
             # angle
-            ang_pred = self.ang_pred(box_tower)
-            ang_reg.append(torch.tanh(ang_pred) * math.pi/2.)
+                ang_pred = self.ang_pred(box_tower)
+                ang_reg.append(torch.tanh(ang_pred) * (math.pi)/2.)
 
-
-        return logits, bbox_reg, ang_reg, centerness
+        if is_rotated:
+            return logits, bbox_reg, ang_reg, centerness
+        return logits, bbox_reg, centerness
 
 
 class FCOSModule(torch.nn.Module):
@@ -174,7 +205,11 @@ class FCOSModule(torch.nn.Module):
             losses (dict[Tensor]): the losses for the model during training. During
                 testing, it is an empty dict.
         """
-        box_cls, box_regression, ang_regression, centerness = self.head(features)
+        if is_rotated:
+            box_cls, box_regression, ang_regression, centerness = self.head(features, is_rotated)
+        else:
+            box_cls, box_regression, centerness = self.head(features, is_rotated)
+            ang_regression = None
         locations = self.compute_locations(features)
 
         if self.training:
@@ -189,9 +224,13 @@ class FCOSModule(torch.nn.Module):
                 centerness, images.image_sizes
             )
 
-    def _forward_train(self, locations, box_cls, box_regression, ang_regression, centerness, targets, rtargets, is_rotated):
+    def _forward_train(
+            self, locations, box_cls, box_regression, ang_regression,
+            centerness, targets, rtargets, is_rotated
+        ):
         loss_box_cls, loss_box_reg, loss_ang_reg, loss_centerness = self.loss_evaluator(
-            locations, box_cls, box_regression, ang_regression, centerness, targets, rtargets, is_rotated
+            locations, box_cls, box_regression, ang_regression,
+            centerness, targets, rtargets, is_rotated
         )
 
         losses = {
@@ -200,6 +239,8 @@ class FCOSModule(torch.nn.Module):
             "loss_centerness": loss_centerness,
             "loss_ang": loss_ang_reg
         }
+        if not is_rotated:
+            del losses["loss_ang"]
         return None, losses
 
     def _forward_test(self, locations, box_cls, box_regression, centerness, image_sizes):
@@ -211,7 +252,7 @@ class FCOSModule(torch.nn.Module):
 
     def compute_locations(self, features):
         """
-        Return: List[Tensor] 每一层feature-map的点对应原图的location
+        Return: List[Tensor] 每一层feature-map的点对应原图的location,size = (num, 2)
         """
         locations = []
         for level, feature in enumerate(features):

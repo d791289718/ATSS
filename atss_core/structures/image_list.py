@@ -42,7 +42,7 @@ def to_image_list(tensors, size_divisible=0):
     if isinstance(tensors, ImageList):
         return tensors
 
-    # is only one image
+    # is only one image & size_divisible = 0, so no need to pad
     elif isinstance(tensors, torch.Tensor):
         # single tensor shape can be inferred
         if tensors.dim() == 3:
@@ -51,7 +51,7 @@ def to_image_list(tensors, size_divisible=0):
         image_sizes = [tensor.shape[-2:] for tensor in tensors]
         return ImageList(tensors, image_sizes)
 
-    # is list[Tensor]
+    # is list[Tensor], so need to pad
     elif isinstance(tensors, (tuple, list)):
         max_size = tuple(max(s) for s in zip(*[img.shape for img in tensors]))  # (w, h, c)每个维度最大的size
 
