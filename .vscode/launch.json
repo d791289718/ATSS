@@ -5,13 +5,15 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "type": "node",
+            "name": "Python: Current File",
+            "type": "python",
             "request": "launch",
-            "name": "Launch Program",
-            "skipFiles": [
-                "<node_internals>/**"
-            ],
-            "program": "${file}"
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "args": [    "--config-file", "/mnt/d/WANGCHENDAN/Projects/ATSS/configs/fcos/H_fcos_R_50_FPN_1x.yaml",
+                "DATALOADER.NUM_WORKERS", "2", 
+                "OUTPUT_DIR", "training_dir/temp"]
         }
     ]
 }
