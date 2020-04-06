@@ -59,7 +59,7 @@ _C.INPUT.PIXEL_STD = [1., 1., 1.]
 # Convert image to BGR format (for Caffe2 models), in range 0-255
 _C.INPUT.TO_BGR255 = True
 # RotatedBoundingBox
-_C.INPUT.ROTATED = True
+_C.INPUT.ROTATED = False
 
 
 # -----------------------------------------------------------------------------
@@ -354,8 +354,8 @@ _C.MODEL.FCOS.CENTER_SAMPLING_RADIUS = 0.0
 # IOU_LOSS_TYPE can be "iou", "linear_iou" or "giou"
 _C.MODEL.FCOS.IOU_LOSS_TYPE = "iou"
 
-_C.MODEL.FCOS.NORM_REG_TARGETS = False
-_C.MODEL.FCOS.CENTERNESS_ON_REG = False
+_C.MODEL.FCOS.NORM_REG_TARGETS = True
+_C.MODEL.FCOS.CENTERNESS_ON_REG = True
 
 _C.MODEL.FCOS.USE_DCN_IN_TOWER = False
 

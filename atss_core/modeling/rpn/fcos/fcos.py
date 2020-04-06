@@ -11,6 +11,10 @@ from atss_core.layers import DFConv2d
 
 
 class FCOSHead(torch.nn.Module):
+    """
+    Takes feature maps from the backbone
+    Outputs feature map每个点的结果(box_cls, box_regression, ang_regression, centerness)
+    """
     def __init__(self, cfg, in_channels):
         """
         Arguments:
@@ -85,7 +89,6 @@ class FCOSHead(torch.nn.Module):
                 if isinstance(l, nn.Conv2d):
                     torch.nn.init.normal_(l.weight, std=0.01)
                     torch.nn.init.constant_(l.bias, 0)
-
         # initialize the bias for focal loss
         prior_prob = cfg.MODEL.FCOS.PRIOR_PROB
         bias_value = -math.log((1 - prior_prob) / prior_prob)
@@ -99,28 +102,40 @@ class FCOSHead(torch.nn.Module):
         centerness = []
         ang_reg = []
 
-        # 不同level的feature map
+        # over 不同level的feature map
         for l, feature in enumerate(x):
+            # tower
             cls_tower = self.cls_tower(feature)
             box_tower = self.bbox_tower(feature)
 
-            ang_reg.append(self.ang_pred(box_tower))
+            # cls
             logits.append(self.cls_logits(cls_tower))
+
+            # centerness
             if self.centerness_on_reg:
                 centerness.append(self.centerness(box_tower))
             else:
                 centerness.append(self.centerness(cls_tower))
 
-            bbox_pred = self.scales[l](self.bbox_pred(box_tower))
+            # TODO：改变对bbox_pred的处理
+            # bbox
+            # bbox_pred = self.scales[l](self.bbox_pred(box_tower))
+                        # if self.norm_reg_targets:
+            #     bbox_pred = F.relu(bbox_pred)
+            #     if self.training:
+            #         bbox_reg.append(bbox_pred)
+            #     else:
+            #         bbox_reg.append(bbox_pred * self.fpn_strides[l])
+            # else:
+            #     bbox_reg.append(torch.exp(bbox_pred))
+            bbox_pred = self.bbox_pred(box_tower)
+            bbox_reg.append(F.relu(bbox_pred))
 
-            if self.norm_reg_targets:
-                bbox_pred = F.relu(bbox_pred)
-                if self.training:
-                    bbox_reg.append(bbox_pred)
-                else:
-                    bbox_reg.append(bbox_pred * self.fpn_strides[l])
-            else:
-                bbox_reg.append(torch.exp(bbox_pred))
+            # angle
+            ang_pred = self.ang_pred(box_tower)
+            ang_reg.append(torch.tanh(ang_pred) * math.pi/2.)
+
+
         return logits, bbox_reg, ang_reg, centerness
 
 
@@ -148,11 +163,10 @@ class FCOSModule(torch.nn.Module):
     def forward(self, images, features, targets=None, rtargets=None, is_rotated=True):
         """
         Arguments:
-            images (ImageList): images for which we want to compute the predictions, only one image
-            features (list[Tensor]): features computed from the images that are
-                used for computing the predictions. Each tensor in the list
-                correspond to different feature levels
+            images (ImageList): images for which we want to compute the predictions
+            features (list[Tensor]): Each tensor in the list correspond to different feature levels
             targets (list[BoxList): ground-truth boxes present in the image (optional)
+                                    Each tensor correspondinf to a image
 
         Returns:
             boxes (list[BoxList]): the predicted boxes from the RPN, one BoxList per
@@ -167,28 +181,25 @@ class FCOSModule(torch.nn.Module):
             return self._forward_train(
                 locations, box_cls,
                 box_regression, ang_regression,
-                centerness, targets, rtargets
+                centerness, targets, rtargets, is_rotated
             )
         else:
             return self._forward_test(
-                locations, box_cls, box_regression, 
+                locations, box_cls, box_regression,
                 centerness, images.image_sizes
             )
 
-    def _forward_train(
-        self, locations, box_cls, box_regression, ang_regression, centerness, targets, rtargets, is_rotated
-    ):
-        loss_box_cls, loss_box_reg, loss_centerness, loss_box_ang = self.loss_evaluator(
+    def _forward_train(self, locations, box_cls, box_regression, ang_regression, centerness, targets, rtargets, is_rotated):
+        loss_box_cls, loss_box_reg, loss_ang_reg, loss_centerness = self.loss_evaluator(
             locations, box_cls, box_regression, ang_regression, centerness, targets, rtargets, is_rotated
         )
 
         losses = {
             "loss_cls": loss_box_cls,
             "loss_reg": loss_box_reg,
-            "loss_centerness": loss_centerness
+            "loss_centerness": loss_centerness,
+            "loss_ang": loss_ang_reg
         }
-        if is_rotated:
-            losses["loss_ang"] = loss_box_ang
         return None, losses
 
     def _forward_test(self, locations, box_cls, box_regression, centerness, image_sizes):

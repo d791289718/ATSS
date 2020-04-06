@@ -33,7 +33,11 @@ class DatasetCatalog(object):
         },
         'HRSC_val': {
             "img_dir":'HRSC2016/val',
-            "ann_file":'HRSC2016//annotations/instances_val.json'
+            "ann_file":'HRSC2016/annotations/instances_val.json'
+        },
+        'HRSC_test': {
+            "img_dir":'HRSC2016/test',
+            "ann_file":'HRSC2016/annotations/instances_test.json'
         },
         ######################
         "coco_2017_train": {
@@ -141,7 +145,7 @@ class DatasetCatalog(object):
 
     @staticmethod
     def get(name):
-        if ("coco" in name)  or ("HRSC" in name) or ("Kaggle" in name):
+        if ("coco" in name) or ("HRSC" in name) or ("Kaggle" in name):
             data_dir = DatasetCatalog.DATA_DIR
             attrs = DatasetCatalog.DATASETS[name]
             args = dict(

@@ -101,21 +101,20 @@ class RotatedBoxList(object):
         """
 
         ratios = tuple(float(s) / float(s_orig) for s, s_orig in zip(size, self.size))
-        assert ratios[0] == ratios[1], "rotatedbbox现在仅支持长宽等比例resize"
+        # ! assert ratios[0] == ratios[1], "rotatedbbox现在仅支持长宽等比例resize"
         # 长宽比例不变
-        if ratios[0] == ratios[1]:
-            ratio = ratios[0]
-            # scale the rotated bbox
-            scaled_box = self.rbbox[:, :-1] * ratio
-            scaled_box = torch.cat((scaled_box, self.rbbox[:, -1, None]), 1)
+        ratio = ratios[0]
+        # scale the rotated bbox
+        scaled_box = self.rbbox[:, :-1] * ratio
+        scaled_box = torch.cat((scaled_box, self.rbbox[:, -1, None]), 1)
 
-            rbbox = RotatedBoxList(scaled_box, size, mode=self.mode)
-            # bbox._copy_extra_fields(self)
-            for k, v in self.extra_fields.items():
-                if not isinstance(v, torch.Tensor):
-                    v = v.resize(size, *args, **kwargs)
-                rbbox.add_field(k, v)
-            return rbbox
+        rbbox = RotatedBoxList(scaled_box, size, mode=self.mode)
+        # bbox._copy_extra_fields(self)
+        for k, v in self.extra_fields.items():
+            if not isinstance(v, torch.Tensor):
+                v = v.resize(size, *args, **kwargs)
+            rbbox.add_field(k, v)
+        return rbbox
 
         # TODO: 处理长宽ratio不一致的形况
         # ratio_width, ratio_height = ratios
@@ -242,8 +241,8 @@ class RotatedBoxList(object):
 
     def area(self):
         rbox = self.rbbox
-        if self.mode == "xywh":
-            area = box[:, 2] * box[:, 3]
+        if self.mode == "xywha":
+            area = rbox[:, 2] * rbox[:, 3]
         else:
             raise RuntimeError("mode should be 'xywha'")
 

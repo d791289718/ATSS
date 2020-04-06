@@ -23,6 +23,9 @@ def build_dataset(dataset_list, transforms, dataset_catalog, is_train=True, is_r
         dataset_catalog (DatasetCatalog): contains the information on how to
             construct a dataset.
         is_train (bool): whether to setup the dataset for training or testing
+
+    Return:
+        COCODatset()的实例
     """
     if not isinstance(dataset_list, (list, tuple)):
         raise RuntimeError(
@@ -111,6 +114,10 @@ def make_batch_data_sampler(
 
 
 def make_data_loader(cfg, is_train=True, is_distributed=False, start_iter=0):
+    """
+    Return:
+        Dataloader
+    """
     # 设置基本需要的参数
     num_gpus = get_world_size()
     if is_train:
@@ -166,7 +173,6 @@ def make_data_loader(cfg, is_train=True, is_distributed=False, start_iter=0):
     datasets = build_dataset(dataset_list, transforms, DatasetCatalog, is_train, cfg.INPUT.ROTATED)
 
     data_loaders = []
-    print(datasets)
     # 每个dataset（即是每个json文件）都有一个dataloader
     for dataset in datasets:
         # batch_sampler是每个batch的采样方式

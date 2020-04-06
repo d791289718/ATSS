@@ -9,7 +9,7 @@ class IOULoss(nn.Module):
         super(IOULoss, self).__init__()
         self.loss_type = loss_type
 
-    def forward(self, pred, target, weight=None):
+    def forward(self, pred, target, weight=None, is_rotated=True):
         pred_left = pred[:, 0]
         pred_top = pred[:, 1]
         pred_right = pred[:, 2]
@@ -19,6 +19,10 @@ class IOULoss(nn.Module):
         target_top = target[:, 1]
         target_right = target[:, 2]
         target_bottom = target[:, 3]
+
+        if is_rotated:
+            pred_ang = pred[:, 4]
+            target_ang = target[:, 4]
 
         target_area = (target_left + target_right) * \
                       (target_top + target_bottom)

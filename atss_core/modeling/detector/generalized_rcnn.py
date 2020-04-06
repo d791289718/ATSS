@@ -51,18 +51,18 @@ class GeneralizedRCNN(nn.Module):
         # images(Tensor) --通过backbone得到--> feature maps
         features = self.backbone(images.tensors)
         # fea_maps --通过rpn得到--> proposals proposal_loss
-        proposals, proposal_losses = self.rpn(images, features, targets，rtargets, is_rotated)
+        proposals, proposal_losses = self.rpn(images, features, targets, rtargets, is_rotated)
         
         ######################
             
-            # roi_head得到
-            if self.roi_heads:
-                x, result, detector_losses = self.roi_heads(features, proposals, targets)
-            else:
-                # RPN-only models don't have roi_heads
-                x = features
-                result = proposals
-                detector_losses = {}
+        # roi_head得到
+        if self.roi_heads:
+            x, result, detector_losses = self.roi_heads(features, proposals, targets)
+        else:
+            # RPN-only models don't have roi_heads
+            x = features
+            result = proposals
+            detector_losses = {}
         ########################
 
         if self.training:

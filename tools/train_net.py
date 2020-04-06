@@ -22,7 +22,7 @@ from atss_core.utils.checkpoint import DetectronCheckpointer
 from atss_core.utils.collect_env import collect_env_info
 from atss_core.utils.comm import synchronize, \
     get_rank, is_pytorch_1_1_0_or_later
-from atss_core.utils.imports import import_file
+# from atss_core.utils.imports import import_file
 from atss_core.utils.logger import setup_logger
 from atss_core.utils.miscellaneous import mkdir
 
@@ -153,8 +153,8 @@ def main():
 
     args = parser.parse_args()
 
-    # num_gpus = int(os.environ["WORLD_SIZE"]) if "WORLD_SIZE" in os.environ else 8
-    num_gpus = 1
+    num_gpus = int(os.environ["WORLD_SIZE"]) if "WORLD_SIZE" in os.environ else 1
+    # num_gpus = 1
     args.distributed = num_gpus > 1
 
     if args.distributed:

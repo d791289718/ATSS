@@ -151,7 +151,7 @@ class ATSSHead(torch.nn.Module):
             padding=1
         )
         self.ang_pred = nn.Conv2d(
-            in_channels, num_anchors， kernel_size=3, stride=1,
+            in_channels, num_anchors, kernel_size=3, stride=1,
             padding=1
         )
         self.centerness = nn.Conv2d(

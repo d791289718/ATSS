@@ -58,7 +58,7 @@ def do_train(
     end = time.time()
     pytorch_1_1_0_or_later = is_pytorch_1_1_0_or_later()
 
-    for iteration, (images, targets, rtargets, _) in enumerate(data_loader, start_iter):  # dim=0上遍历
+    for iteration, (images, targets, rtargets) in enumerate(data_loader, start_iter):  # dim=0上遍历
         # images, targets 是每个batch的 Tensor
         data_time = time.time() - end
         iteration = iteration + 1
