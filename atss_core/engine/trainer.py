@@ -5,6 +5,7 @@ import time
 
 import torch
 import torch.distributed as dist
+from torch.utils.tensorboard import SummaryWriter
 
 from atss_core.utils.comm import get_world_size, is_pytorch_1_1_0_or_later
 from atss_core.utils.metric_logger import MetricLogger

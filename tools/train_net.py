@@ -1,3 +1,4 @@
+# coding=utf-8
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
 r"""
 Basic training script for PyTorch
@@ -11,6 +12,7 @@ import argparse
 import os
 
 import torch
+from torch.utils.tensorboard import SummaryWriter
 from atss_core.config import cfg
 from atss_core.data import make_data_loader
 from atss_core.solver import make_lr_scheduler
@@ -101,7 +103,7 @@ def train(cfg, local_rank, distributed):
 def run_test(cfg, model, distributed):
     if distributed:
         model = model.module
-    torch.cuda.empty_cache()  # TODO check if it helps
+    torch.cuda.empty_cache()
     iou_types = ("bbox",)
     if cfg.MODEL.MASK_ON:
         iou_types = iou_types + ("segm",)

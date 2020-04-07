@@ -39,7 +39,6 @@ def main():
     num_gpus = int(os.environ["WORLD_SIZE"]) if "WORLD_SIZE" in os.environ else 1
     distributed = num_gpus > 1
 
-    print('=========')
     if distributed:
         torch.cuda.set_device(args.local_rank)
         torch.distributed.init_process_group(
@@ -66,7 +65,7 @@ def main():
     checkpointer = DetectronCheckpointer(cfg, model, save_dir=output_dir)
     _ = checkpointer.load(cfg.MODEL.WEIGHT)
 
-# the same with run_test in train_net.py
+    # the same with run_test in train_net.py
     iou_types = ("bbox",)
     if cfg.MODEL.MASK_ON:
         iou_types = iou_types + ("segm",)

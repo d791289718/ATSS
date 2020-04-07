@@ -424,11 +424,18 @@ class FCOSLossComputation(object):
 
         else:
             # 如果没有目标，那么box ang的值都应该为0，所以和0算差值
-            reg_loss = box_regression_flatten.sum()
-            reduce_sum(centerness_flatten.new_tensor([0.0]))
-            centerness_loss = centerness_flatten.sum()
+            # reg_loss = box_regression_flatten.sum()
+            # reduce_sum(centerness_flatten.new_tensor([0.0]))
+            # centerness_loss = centerness_flatten.sum()
+            # if is_rotated:
+            #     ang_loss = ang_regression_flatten.sum()
+            # else:
+            #     ang_loss = None
+
+            centerness_loss = reduce_sum(centerness_flatten.new_tensor([0.0]))
+            reg_loss = reduce_sum(box_regression_flatten.new_tensor([0.0]))
             if is_rotated:
-                ang_loss = ang_regression_flatten.sum()
+                ang_loss = reduce_sum(ang_regression_flatten.new_tensor([0.0]))
             else:
                 ang_loss = None
 
