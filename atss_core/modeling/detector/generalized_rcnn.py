@@ -53,9 +53,8 @@ class GeneralizedRCNN(nn.Module):
         features = self.backbone(images.tensors)
         # fea_maps --通过rpn得到--> proposals proposal_loss
         proposals, proposal_losses = self.rpn(images, features, targets, rtargets, is_rotated)
-        
+
         ######################
-            
         # roi_head得到
         if self.roi_heads:
             x, result, detector_losses = self.roi_heads(features, proposals, targets)

@@ -211,7 +211,7 @@ class FCOSModule(torch.nn.Module):
             box_cls, box_regression, centerness = self.head(features, is_rotated)
             ang_regression = None
         locations = self.compute_locations(features)
-
+        
         if self.training:
             return self._forward_train(
                 locations, box_cls,
@@ -220,8 +220,9 @@ class FCOSModule(torch.nn.Module):
             )
         else:
             return self._forward_test(
-                locations, box_cls, box_regression,
-                centerness, images.image_sizes
+                locations, box_cls,
+                box_regression, ang_regression,
+                centerness, images.image_sizes, is_rotated
             )
 
     def _forward_train(
@@ -243,16 +244,19 @@ class FCOSModule(torch.nn.Module):
             del losses["loss_ang"]
         return None, losses
 
-    def _forward_test(self, locations, box_cls, box_regression, centerness, image_sizes):
+    def _forward_test(
+        self, locations, box_cls, box_regression, ang_regression,
+        centerness, image_sizes, is_rotated
+        ):
         boxes = self.box_selector_test(
-            locations, box_cls, box_regression, 
-            centerness, image_sizes
+            locations, box_cls, box_regression, ang_regression,
+            centerness, image_sizes, is_rotated
         )
         return boxes, {}
 
     def compute_locations(self, features):
         """
-        Return: List[Tensor] 每一层feature-map的点对应原图的location,size = (num, 2)
+        Return: List[Tensor] 每一层feature-map的点对应原图的location,size = (W * H, 2)
         """
         locations = []
         for level, feature in enumerate(features):

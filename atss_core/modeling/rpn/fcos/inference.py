@@ -9,7 +9,10 @@ from atss_core.structures.bounding_box import BoxList
 from atss_core.structures.boxlist_ops import cat_boxlist
 from atss_core.structures.boxlist_ops import boxlist_ml_nms
 from atss_core.structures.boxlist_ops import remove_small_boxes
-
+from atss_core.structures.rboxlist_ops import remove_small_rotated_boxes
+from atss_core.structures.rboxlist_ops import convert_to_rbox
+from atss_core.structures.rboxlist_ops import cat_rboxlist
+from atss_core.structures.rboxlist_ops import rboxlist_ml_nms
 
 class FCOSPostProcessor(torch.nn.Module):
     """
@@ -51,22 +54,24 @@ class FCOSPostProcessor(torch.nn.Module):
             image_sizes):
         """
         Arguments:
-            anchors: list[BoxList]
-            box_cls: tensor of size N, A * C, H, W
-            box_regression: tensor of size N, A * 4, H, W
+            loactions: Tesnor(num, 2)
+            box_cls: tensor of size N, C, H, W
+            box_regression: tensor of size N, 4, H, W
+        Return:
+            list[BoxList]
         """
         N, C, H, W = box_cls.shape
 
         # put in the same format as locations
         box_cls = box_cls.view(N, C, H, W).permute(0, 2, 3, 1)
-        box_cls = box_cls.reshape(N, -1, C).sigmoid()
+        box_cls = box_cls.reshape(N, -1, C).sigmoid()  # N, W*H, 1
         box_regression = box_regression.view(N, 4, H, W).permute(0, 2, 3, 1)
-        box_regression = box_regression.reshape(N, -1, 4)
+        box_regression = box_regression.reshape(N, -1, 4)  # N, W*H, 1
         centerness = centerness.view(N, 1, H, W).permute(0, 2, 3, 1)
-        centerness = centerness.reshape(N, -1).sigmoid()
+        centerness = centerness.reshape(N, -1).sigmoid()  # N, W*H
 
         candidate_inds = box_cls > self.pre_nms_thresh
-        pre_nms_top_n = candidate_inds.view(N, -1).sum(1)
+        pre_nms_top_n = candidate_inds.view(N, -1).sum(1)  # True看作1处理
         pre_nms_top_n = pre_nms_top_n.clamp(max=self.pre_nms_top_n)
 
         # multiply the classification scores with centerness scores
@@ -76,11 +81,11 @@ class FCOSPostProcessor(torch.nn.Module):
         for i in range(N):
             per_box_cls = box_cls[i]
             per_candidate_inds = candidate_inds[i]
-            per_box_cls = per_box_cls[per_candidate_inds]
+            per_box_cls = per_box_cls[per_candidate_inds]  # score
 
             per_candidate_nonzeros = per_candidate_inds.nonzero()
-            per_box_loc = per_candidate_nonzeros[:, 0]
-            per_class = per_candidate_nonzeros[:, 1] + 1
+            per_box_loc = per_candidate_nonzeros[:, 0]  # box location
+            per_class = per_candidate_nonzeros[:, 1] + 1  # class name
 
             per_box_regression = box_regression[i]
             per_box_regression = per_box_regression[per_box_loc]
@@ -112,29 +117,116 @@ class FCOSPostProcessor(torch.nn.Module):
 
         return results
 
-    def forward(self, locations, box_cls, box_regression, centerness, image_sizes):
+    def rotated_forward_for_single_feature_map(
+            self, locations, box_cls,
+            box_regression, ang_regression,
+            centerness, image_sizes):
         """
         Arguments:
-            anchors: list[list[BoxList]]
+            locations tensor (num, 2)
+            box_cls: tensor of size N, C, H, W
+            box_regression: tensor of size N, 4, H, W
+            ang_regression: tensor of size N, 1, H, W
+            centerness: tensor of size N, 1, H, W
+        """
+        N, C, H, W = box_cls.shape
+
+        # put in the same format as locations
+        box_cls = box_cls.view(N, C, H, W).permute(0, 2, 3, 1)
+        box_cls = box_cls.reshape(N, -1, C).sigmoid()  # N, W*H, C
+        box_regression = box_regression.view(N, 4, H, W).permute(0, 2, 3, 1)
+        box_regression = box_regression.reshape(N, -1, 4)  # N, W*H, 4
+        ang_regression = ang_regression.view(N, 1, H, W).permute(0, 2, 3, 1)
+        ang_regression = ang_regression.reshape(N, -1)  # N, W*H
+        centerness = centerness.view(N, 1, H, W).permute(0, 2, 3, 1)
+        centerness = centerness.reshape(N, -1).sigmoid()  # N, W*H
+
+        
+        # candidate_inds = box_cls > self.pre_nms_thresh
+        candidate_inds = box_cls > 0
+        pre_nms_top_n = candidate_inds.view(N, -1).sum(1)  # 每个img > thresh的个数(in the current feature map)
+        pre_nms_top_n = pre_nms_top_n.clamp(max=self.pre_nms_top_n)
+
+        # multiply the classification scores with centerness scores
+        box_cls = box_cls * centerness[:, :, None]
+
+        results = []
+        for i in range(N):
+            per_box_cls = box_cls[i]  # W*H, C
+            per_candidate_inds = candidate_inds[i]
+            per_box_cls = per_box_cls[per_candidate_inds]  # score ,size = (num, )
+
+            per_candidate_nonzeros = per_candidate_inds.nonzero()
+            per_box_loc = per_candidate_nonzeros[:, 0]  # feature_map上点的索引
+            per_class = per_candidate_nonzeros[:, 1] + 1  # class索引
+
+            # 所有符合要求的点的box_reg, size = (符合的数目, 4)
+            per_box_regression = box_regression[i]
+            per_box_regression = per_box_regression[per_box_loc]
+            # 所有符合要求的点的ang_reg
+            per_ang_regression = ang_regression[i]
+            per_ang_regression = per_ang_regression[per_box_loc]
+            # 所有符合要求的点的locations
+            per_locations = locations[per_box_loc]
+
+            per_pre_nms_top_n = pre_nms_top_n[i]
+
+            if per_candidate_inds.sum().item() > per_pre_nms_top_n.item():
+                per_box_cls, top_k_indices = \
+                    per_box_cls.topk(per_pre_nms_top_n, sorted=False)
+                per_class = per_class[top_k_indices]
+                per_box_regression = per_box_regression[top_k_indices]
+                per_locations = per_locations[top_k_indices]
+                per_ang_regression = per_ang_regression[top_k_indices]
+
+            # l, t, r, b size=(num, ) dim=1
+            l = per_box_regression[:, 0]
+            t = per_box_regression[:, 1]
+            r = per_box_regression[:, 2]
+            b = per_box_regression[:, 3]
+            xs = per_locations[:, 0]
+            ys = per_locations[:, 1]
+            ang = per_ang_regression
+
+            rboxlist = convert_to_rbox(l, t, r, b, ang, xs, ys, image_sizes[i])
+            rboxlist.add_field("labels", per_class)
+            rboxlist.add_field("scores", torch.sqrt(per_box_cls))
+            rboxlist = rboxlist.clip_to_image(remove_empty=True)
+            rboxlist = remove_small_rotated_boxes(rboxlist, self.min_size)
+            results.append(rboxlist)
+
+        return results
+
+    def forward(self, locations, box_cls, box_regression, ang_regression, centerness, image_sizes, is_rotated):
+        """
+        Arguments:
+            # over feature map
+            locations: list[Tensor]
             box_cls: list[tensor]
             box_regression: list[tensor]
+
+            # over batch
             image_sizes: list[(h, w)]
         Returns:
             boxlists (list[BoxList]): the post-processed anchors, after
                 applying box decoding and NMS
         """
         sampled_boxes = []
-        for _, (l, o, b, c) in enumerate(zip(locations, box_cls, box_regression, centerness)):
-            sampled_boxes.append(
-                self.forward_for_single_feature_map(
-                    l, o, b, c, image_sizes
+        for _, (l, o, b, a, c) in enumerate(zip(locations, box_cls, box_regression, ang_regression, centerness)):
+            if not is_rotated:
+                sampled_boxes.append(
+                    self.forward_for_single_feature_map(l, o, b, c, image_sizes)
                 )
-            )
-
+            else:
+                sampled_boxes.append(
+                    self.rotated_forward_for_single_feature_map(l, o, b, a, c, image_sizes)
+                )
+        
         boxlists = list(zip(*sampled_boxes))
-        boxlists = [cat_boxlist(boxlist) for boxlist in boxlists]
+        boxlists = [cat_rboxlist(boxlist) for boxlist in boxlists]
+
         if not self.bbox_aug_enabled:
-            boxlists = self.select_over_all_levels(boxlists)
+            boxlists = self.select_over_all_levels(boxlists, is_rotated)
 
         return boxlists
 
@@ -142,12 +234,15 @@ class FCOSPostProcessor(torch.nn.Module):
     # but filter_results is per image
     # TODO Yang: solve this issue in the future. No good solution
     # right now.
-    def select_over_all_levels(self, boxlists):
+    def select_over_all_levels(self, boxlists, is_rotated):
         num_images = len(boxlists)
         results = []
         for i in range(num_images):
             # multiclass nms
-            result = boxlist_ml_nms(boxlists[i], self.nms_thresh)
+            if not is_rotated:
+                result = boxlist_ml_nms(boxlists[i], self.nms_thresh)
+            else:
+                result = rboxlist_ml_nms(boxlists[i], self.nms_thresh)
             number_of_detections = len(result)
 
             # Limit to max_per_image detections **over all classes**

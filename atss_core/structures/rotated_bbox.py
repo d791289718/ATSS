@@ -56,6 +56,18 @@ class RotatedBoxList(object):
         for k, v in bbox.extra_fields.items():
             self.extra_fields[k] = v
 
+    def get_bbox(self):
+        dx = torch.abs(self.rbbox[:, 2] * torch.cos(self.rbbox[:, 4]) / 2.)
+        dy = torch.abs(self.rbbox[:, 3] * torch.sin(self.rbbox[:, 4]) / 2.)
+
+        left = self.rbbox[:, 0] - dx
+        right = self.rbbox[:, 0] + dx
+        top = self.rbbox[:, 1] - dy
+        bottom = self.rbbox[:, 1] + dy
+
+        return torch.stack((left, top, right, bottom), dim=1)
+
+
     # def convert(self, mode):
     #     if mode not in ("xyxy", "xywh"):
     #         raise ValueError("mode should be 'xyxy' or 'xywh'")
@@ -226,18 +238,29 @@ class RotatedBoxList(object):
     def __len__(self):
         return self.rbbox.shape[0]
 
-    # TODO: 修改成rotatedbbox版本
-    # def clip_to_image(self, remove_empty=True):
-    #     TO_REMOVE = 1
-    #     self.bbox[:, 0].clamp_(min=0, max=self.size[0] - TO_REMOVE)
-    #     self.bbox[:, 1].clamp_(min=0, max=self.size[1] - TO_REMOVE)
-    #     self.bbox[:, 2].clamp_(min=0, max=self.size[0] - TO_REMOVE)
-    #     self.bbox[:, 3].clamp_(min=0, max=self.size[1] - TO_REMOVE)
-    #     if remove_empty:
-    #         box = self.bbox
-    #         keep = (box[:, 3] > box[:, 1]) & (box[:, 2] > box[:, 0])
-    #         return self[keep]
-    #     return self
+    def clip_to_image(self, remove_empty=True):
+        bbox = self.get_bbox()
+        left = bbox[:, 0]
+        right = bbox[:, 2]
+        top = bbox[:, 1]
+        bottom = bbox[:, 3]
+
+        TO_REMOVE = 1
+        left.clamp_(min=0, max=self.size[0] - TO_REMOVE)
+        right.clamp_(min=0, max=self.size[0] - TO_REMOVE)
+        top.clamp_(min=0, max=self.size[1] - TO_REMOVE)
+        bottom.clamp_(min=0, max=self.size[1] - TO_REMOVE)
+
+        self.rbbox[:, 0] = (left + right) / 2.
+        self.rbbox[:, 1] = (top + bottom) / 2.
+        self.rbbox[:, 2] = (right - left) / torch.abs(torch.cos(self.rbbox[:, 4]))
+        self.rbbox[:, 3] = (bottom - top) / torch.abs(torch.sin(self.rbbox[:, 4]))
+
+        if remove_empty:
+            rbox = self.rbbox
+            keep = (rbox[:, 2] > 0) & (rbox[:, 3] > 0)
+            return self[keep]
+        return self
 
     def area(self):
         rbox = self.rbbox
@@ -248,17 +271,6 @@ class RotatedBoxList(object):
 
         return area
 
-    def copy_with_fields(self, fields, skip_missing=False):
-        bbox = BoxList(self.bbox, self.size, self.mode)
-        if not isinstance(fields, (list, tuple)):
-            fields = [fields]
-        for field in fields:
-            if self.has_field(field):
-                bbox.add_field(field, self.get_field(field))
-            elif not skip_missing:
-                raise KeyError("Field '{}' not found in {}".format(field, self))
-        return bbox
-
     def __repr__(self):
         s = self.__class__.__name__ + "("
         s += "num_boxes={}, ".format(len(self))
@@ -267,6 +279,16 @@ class RotatedBoxList(object):
         s += "mode={})".format(self.mode)
         return s
 
+    # def copy_with_fields(self, fields, skip_missing=False):
+    #     bbox = BoxList(self.bbox, self.size, self.mode)
+    #     if not isinstance(fields, (list, tuple)):
+    #         fields = [fields]
+    #     for field in fields:
+    #         if self.has_field(field):
+    #             bbox.add_field(field, self.get_field(field))
+    #         elif not skip_missing:
+    #             raise KeyError("Field '{}' not found in {}".format(field, self))
+    #     return bbox
 
 if __name__ == "__main__":
     bbox = RotatedBoxList([[10, 10, 10, 10, 0], [10, 10, 5, 5, 0]], (100, 100))

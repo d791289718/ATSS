@@ -21,10 +21,11 @@ def compute_on_dataset(model, data_loader, device, timer=None):
     results_dict = {}
     cpu_device = torch.device("cpu")
     for _, batch in enumerate(tqdm(data_loader)):
-        images, targets, image_ids = batch
+        images, targets, rtargets, image_ids = batch
         with torch.no_grad():
             if timer:
                 timer.tic()
+            # bbox_aug
             if cfg.TEST.BBOX_AUG.ENABLED:
                 if cfg.TEST.BBOX_AUG.VOTE:
                     output = im_detect_bbox_aug_vote(model, images, device)
@@ -84,6 +85,7 @@ def inference(
     total_timer = Timer()
     inference_timer = Timer()
     total_timer.tic()
+    # predications is a dict {imgid: BoxList}
     predictions = compute_on_dataset(model, data_loader, device, inference_timer)
     # wait for all processes to complete before measuring the time
     synchronize()

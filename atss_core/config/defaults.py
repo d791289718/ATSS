@@ -59,7 +59,7 @@ _C.INPUT.PIXEL_STD = [1., 1., 1.]
 # Convert image to BGR format (for Caffe2 models), in range 0-255
 _C.INPUT.TO_BGR255 = True
 # RotatedBoundingBox
-_C.INPUT.ROTATED = False
+_C.INPUT.ROTATED = True
 
 
 # -----------------------------------------------------------------------------
@@ -334,7 +334,7 @@ _C.MODEL.ATSS.PRE_NMS_TOP_N = 1000
 # FCOS Options
 # ---------------------------------------------------------------------------- #
 _C.MODEL.FCOS = CN()
-_C.MODEL.FCOS.NUM_CLASSES = 81  # the number of classes including background
+_C.MODEL.FCOS.NUM_CLASSES = 2  # the number of classes including background
 _C.MODEL.FCOS.FPN_STRIDES = [8, 16, 32, 64, 128]
 _C.MODEL.FCOS.PRIOR_PROB = 0.01
 _C.MODEL.FCOS.INFERENCE_TH = 0.05

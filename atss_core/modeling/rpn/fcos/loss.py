@@ -15,6 +15,7 @@ from atss_core.modeling.matcher import Matcher
 from atss_core.modeling.utils import cat
 from atss_core.structures.boxlist_ops import boxlist_iou
 from atss_core.structures.boxlist_ops import cat_boxlist
+from atss_core.structures.rboxlist_ops import convert_to_ltrb
 
 
 INF = 100000000
@@ -192,25 +193,14 @@ class FCOSLossComputation(object):
             labels_per_im = targets_per_im.get_field("labels")
             area = targets_per_im.area()
 
-            # 数学计算
-            dx = xs[:, None] - bboxes[:, 0][None]
-            dy = ys[:, None] - bboxes[:, 1][None]
-            theta = torch.atan(dy / dx) - bboxes[:, 4][None]  # 弧度
-            dis = (dx.pow(2) + dy.pow(2)).sqrt()
-            w = bboxes[:, 2][None]
-            h = bboxes[:, 3][None]
-
-            dw = dis * torch.cos(theta)
-            dh = dis * torch.sin(theta)
-
-            t = w / 2. - dh
-            b = w / 2. + dh
-            l = h / 2. - dw
-            r = h / 2. + dw
+            l, t, r, b = convert_to_ltrb(
+                xs[:, None], ys[:, None], bboxes[:, 0][None], bboxes[:, 1][None],
+                bboxes[:, 2][None], bboxes[:, 3][None], bboxes[:, 4][None]
+            )
 
             reg_targets_per_im = torch.stack([l, t, r, b], dim=2)
 
-            ang_targets_per_im = bboxes[:, 4][None].expand(len(locations), -1)
+            ang_targets_per_im = bboxes[:, 4][None].expand(len(locations), -1)  #预测的是与x夹角绝对值
 
             # TODO: rotated
             if self.center_sampling_radius > 0:
@@ -317,7 +307,7 @@ class FCOSLossComputation(object):
         """
         Arguments:
             # list的每个元素是feature map
-            locations (list[BoxList])
+            locations (list[Tensor])
             box_cls (list[Tensor])
             box_regression (list[Tensor])
             centerness (list[Tensor])

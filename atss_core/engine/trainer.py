@@ -58,6 +58,8 @@ def do_train(
     start_training_time = time.time()
     end = time.time()
     pytorch_1_1_0_or_later = is_pytorch_1_1_0_or_later()
+    # tensorboard
+    writer = SummaryWriter()
 
     for iteration, (images, targets, rtargets) in enumerate(data_loader, start_iter):  # dim=0上遍历
         # images, targets 是每个batch的 Tensor
@@ -115,11 +117,16 @@ def do_train(
                     memory=torch.cuda.max_memory_allocated() / 1024.0 / 1024.0,
                 )
             )
+
+        if iteration % 200 == 0 or iteration == max_iter:
+            writer.add_scalar('training loss', losses_reduced, iteration)
+
         if iteration % checkpoint_period == 0:
             checkpointer.save("model_{:07d}".format(iteration), **arguments)
         if iteration == max_iter:
             checkpointer.save("model_final", **arguments)
 
+    writer.close()
     total_training_time = time.time() - start_training_time
     total_time_str = str(datetime.timedelta(seconds=total_training_time))
     logger.info(
