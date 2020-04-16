@@ -147,18 +147,19 @@ class FCOSHead(torch.nn.Module):
                 centerness.append(self.centerness(cls_tower))
 
             # TODO：改变对bbox_pred的处理
-            # bbox
-            # bbox_pred = self.scales[l](self.bbox_pred(box_tower))
-                        # if self.norm_reg_targets:
-            #     bbox_pred = F.relu(bbox_pred)
-            #     if self.training:
-            #         bbox_reg.append(bbox_pred)
-            #     else:
-            #         bbox_reg.append(bbox_pred * self.fpn_strides[l])
-            # else:
-            #     bbox_reg.append(torch.exp(bbox_pred))
-            bbox_pred = self.bbox_pred(box_tower)
-            bbox_reg.append(F.relu(bbox_pred))
+            # bbox V2
+            bbox_pred = self.scales[l](self.bbox_pred(box_tower))
+            if self.norm_reg_targets:
+                bbox_pred = F.relu(bbox_pred)
+                if self.training:
+                    bbox_reg.append(bbox_pred)
+                else:
+                    bbox_reg.append(bbox_pred * self.fpn_strides[l])
+            else:
+                bbox_reg.append(torch.exp(bbox_pred))
+            # V1
+            # bbox_pred = self.bbox_pred(box_tower)
+            # bbox_reg.append(F.relu(bbox_pred))
 
             if is_rotated:
             # angle

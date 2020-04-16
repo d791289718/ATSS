@@ -36,9 +36,31 @@ def reduce_loss_dict(loss_dict):
     return reduced_losses
 
 
+def do_validation(model, data_loader_val, device, is_rotated):
+        val_loss = 0.0
+        start_val_time = time.time()
+        with torch.no_grad():
+            for _, (images, targets, rtargets) in enumerate(data_loader_val, 0):
+                images = images.to(device)
+                targets = [target.to(device) for target in targets]
+                rtargets = [target.to(device) for target in rtargets]
+
+                loss_dict = model(images, targets=targets, rtargets=rtargets, is_rotated=is_rotated)
+
+                # reduce losses over all GPUs for logging purposes
+                loss_dict_reduced = reduce_loss_dict(loss_dict)
+                losses_reduced = sum(loss for loss in loss_dict_reduced.values())
+                val_loss += losses_reduced
+
+            total_val_time = time.time() - start_val_time
+            
+        return val_loss, total_val_time
+
+
 def do_train(
     model,
     data_loader,
+    data_loader_val,
     optimizer,
     scheduler,
     checkpointer,
@@ -119,7 +141,17 @@ def do_train(
             )
 
         if iteration % 200 == 0 or iteration == max_iter:
-            writer.add_scalar('training loss', losses_reduced, iteration)
+            val_loss_reduced, total_val_time = do_validation(model, data_loader_val, device, is_rotated)
+            
+            total_time_str = str(datetime.timedelta(seconds=total_val_time))
+            logger.info(
+                "validation time: {} ({:.4f} s / it)".format(
+                    total_time_str, total_val_time / (len(data_loader_val))
+                )
+            )
+            logger.info("validation loss: {}".format(val_loss_reduced))
+            writer.add_scalars(
+                'Loss', {'train': losses_reduced, 'val': val_loss_reduced}, iteration)
 
         if iteration % checkpoint_period == 0:
             checkpointer.save("model_{:07d}".format(iteration), **arguments)
@@ -134,3 +166,4 @@ def do_train(
             total_time_str, total_training_time / (max_iter)
         )
     )
+

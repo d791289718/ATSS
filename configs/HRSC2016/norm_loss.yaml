@@ -1,0 +1,48 @@
+MODEL:
+  META_ARCHITECTURE: "GeneralizedRCNN"
+  WEIGHT: "catalog://ImageNetPretrained/MSRA/R-50"
+  RPN_ONLY: True
+  FCOS_ON: True
+  BACKBONE:
+    CONV_BODY: "R-50-FPN-RETINANET"
+    USE_GN: True
+  RESNETS:
+    BACKBONE_OUT_CHANNELS: 256
+  FPN:
+    USE_GN: True
+  RETINANET:
+    USE_C5: True # FCOS uses P5 instead of C5
+  FCOS:
+    CENTER_SAMPLING_RADIUS: 0.0
+    IOU_LOSS_TYPE: "iou"
+    # normalizing the regression targets with FPN strides
+    NORM_REG_TARGETS: True
+    # position of centerness branch
+    CENTERNESS_ON_REG: True
+    CENTERNESS_INDEPENDENT: False
+    # we only use dcn in the last layer of towers
+    USE_DCN_IN_TOWER: False
+DATASETS:
+  TRAIN: ("HRSC_test", )
+  TEST: ("HRSC_val", )
+INPUT:
+  MIN_SIZE_TRAIN: (800,)
+  MAX_SIZE_TRAIN: 1333
+  MIN_SIZE_TEST: 800
+  MAX_SIZE_TEST: 1333
+DATALOADER:
+  SIZE_DIVISIBILITY: 32
+SOLVER:
+  BASE_LR: 0.0025
+  WEIGHT_DECAY: 0.0001
+  STEPS: [0, 30000, 40000]
+  MAX_ITER: 60000
+  IMS_PER_BATCH: 2  # 16
+  WARMUP_METHOD: "constant"
+# TEST:
+#   BBOX_AUG:
+#     ENABLED: False
+#     H_FLIP: True
+#     SCALES: (400, 500, 600, 700, 900, 1000, 1100, 1200)
+#     MAX_SIZE: 2000
+#     SCALE_H_FLIP: True

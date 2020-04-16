@@ -80,6 +80,7 @@ def train(cfg, local_rank, distributed):
         is_distributed=distributed,
         start_iter=arguments["iteration"],
     )
+    data_loader_val = make_data_loader(cfg, is_train=True, is_distributed=distributed, start_iter=0)
 
     # 每间隔多少个循环保存一次模型参数
     checkpoint_period = cfg.SOLVER.CHECKPOINT_PERIOD
@@ -88,6 +89,7 @@ def train(cfg, local_rank, distributed):
     do_train(
         model,
         data_loader,
+        data_loader_val,
         optimizer,
         scheduler,
         checkpointer,

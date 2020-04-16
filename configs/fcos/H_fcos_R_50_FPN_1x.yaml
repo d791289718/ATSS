@@ -28,6 +28,8 @@ SOLVER:
   MAX_ITER: 60000
   IMS_PER_BATCH: 2  # 16
   WARMUP_METHOD: "constant"
+TEST:
+  IMS_PER_BATCH: 2
 # TEST:
 #   BBOX_AUG:
 #     ENABLED: False

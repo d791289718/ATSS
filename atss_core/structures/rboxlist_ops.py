@@ -8,7 +8,7 @@ from atss_core.structures.rotated_bbox import RotatedBoxList
 
 from atss_core.layers import nms as _box_nms
 from atss_core.layers import ml_nms as _box_ml_nms
-from atss_core.layers.poly_nms import poly_nms_cuda
+# from atss_core.layers.poly_nms import poly_nms_cuda
 
 def convert_to_ltrb_V3(xs, ys, xc, yc, w, h, ang):
     """
@@ -49,13 +49,13 @@ def convert_to_ltrb(xs, ys, xc, yc, w, h, ang):
     dx = xs - xc
     dy = ys - yc
 
-    flip = torch.ones(1, num_box)
+    flip = xs.new_ones(1, num_box)
     flip[ang > 0] = -1
 
     pre_loc = torch.stack((dx, dy), dim=2)
 
     # 旋转矩阵
-    ang.squeeze_()
+    ang = ang[0]
     transform_matrix_1 = torch.stack((torch.cos(ang), -1*torch.sin(ang)), dim=1)
     transform_matrix_2 = torch.stack((torch.sin(ang), torch.cos(ang)), dim=1)
     transform_matrix = torch.stack((transform_matrix_1, transform_matrix_2), dim=1)
