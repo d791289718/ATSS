@@ -5,6 +5,7 @@ def coco_evaluation(
     dataset,
     predictions,
     output_folder,
+    is_rotated,
     box_only,
     iou_types,
     expected_results,
@@ -18,4 +19,5 @@ def coco_evaluation(
         iou_types=iou_types,
         expected_results=expected_results,
         expected_results_sigma_tol=expected_results_sigma_tol,
+        is_rotated=is_rotated,
     )

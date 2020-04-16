@@ -246,8 +246,8 @@ class FCOSModule(torch.nn.Module):
         return None, losses
 
     def _forward_test(
-        self, locations, box_cls, box_regression, ang_regression,
-        centerness, image_sizes, is_rotated
+            self, locations, box_cls, box_regression, ang_regression,
+            centerness, image_sizes, is_rotated
         ):
         boxes = self.box_selector_test(
             locations, box_cls, box_regression, ang_regression,

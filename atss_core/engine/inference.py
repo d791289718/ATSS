@@ -21,7 +21,7 @@ def compute_on_dataset(model, data_loader, device, timer=None):
     results_dict = {}
     cpu_device = torch.device("cpu")
     for _, batch in enumerate(tqdm(data_loader)):
-        images, targets, rtargets, image_ids = batch
+        images, tatgets, rtargets = batch
         with torch.no_grad():
             if timer:
                 timer.tic()
@@ -75,6 +75,7 @@ def inference(
         expected_results=(),
         expected_results_sigma_tol=4,
         output_folder=None,
+        is_rotated=True,
 ):
     # convert to a torch.device for efficiency
     device = torch.device(device)
@@ -122,4 +123,5 @@ def inference(
     return evaluate(dataset=dataset,
                     predictions=predictions,
                     output_folder=output_folder,
+                    is_rotated=is_rotated,
                     **extra_args)

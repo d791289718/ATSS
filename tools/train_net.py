@@ -80,7 +80,7 @@ def train(cfg, local_rank, distributed):
         is_distributed=distributed,
         start_iter=arguments["iteration"],
     )
-    data_loader_val = make_data_loader(cfg, is_train=True, is_distributed=distributed, start_iter=0)
+    data_loader_val = make_data_loader(cfg, is_train=False, is_distributed=distributed, start_iter=0)
 
     # 每间隔多少个循环保存一次模型参数
     checkpoint_period = cfg.SOLVER.CHECKPOINT_PERIOD
@@ -130,6 +130,7 @@ def run_test(cfg, model, distributed):
             expected_results=cfg.TEST.EXPECTED_RESULTS,
             expected_results_sigma_tol=cfg.TEST.EXPECTED_RESULTS_SIGMA_TOL,
             output_folder=output_folder,
+            is_rotated=cfg.INPUT.ROTATED,
         )
         synchronize()
 

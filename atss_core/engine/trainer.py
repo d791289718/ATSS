@@ -37,24 +37,24 @@ def reduce_loss_dict(loss_dict):
 
 
 def do_validation(model, data_loader_val, device, is_rotated):
-        val_loss = 0.0
-        start_val_time = time.time()
-        with torch.no_grad():
-            for _, (images, targets, rtargets) in enumerate(data_loader_val, 0):
-                images = images.to(device)
-                targets = [target.to(device) for target in targets]
-                rtargets = [target.to(device) for target in rtargets]
+    val_loss = 0.0
+    start_val_time = time.time()
+    with torch.no_grad():
+        for _, (images, targets, rtargets) in enumerate(data_loader_val[0], 0):
+            images = images.to(device)
+            targets = [target.to(device) for target in targets]
+            rtargets = [target.to(device) for target in rtargets]
 
-                loss_dict = model(images, targets=targets, rtargets=rtargets, is_rotated=is_rotated)
+            loss_dict = model(images, targets=targets, rtargets=rtargets, is_rotated=is_rotated)
 
-                # reduce losses over all GPUs for logging purposes
-                loss_dict_reduced = reduce_loss_dict(loss_dict)
-                losses_reduced = sum(loss for loss in loss_dict_reduced.values())
-                val_loss += losses_reduced
+            # reduce losses over all GPUs for logging purposes
+            loss_dict_reduced = reduce_loss_dict(loss_dict)
+            losses_reduced = sum(loss for loss in loss_dict_reduced.values())
+            val_loss += losses_reduced
 
-            total_val_time = time.time() - start_val_time
-            
-        return val_loss, total_val_time
+        total_val_time = time.time() - start_val_time
+        
+    return val_loss, total_val_time
 
 
 def do_train(
@@ -83,7 +83,7 @@ def do_train(
     # tensorboard
     writer = SummaryWriter()
 
-    for iteration, (images, targets, rtargets) in enumerate(data_loader, start_iter):  # dim=0上遍历
+    for iteration, (images, targets, rtargets, _) in enumerate(data_loader, start_iter):  # dim=0上遍历
         # images, targets 是每个batch的 Tensor
         data_time = time.time() - end
         iteration = iteration + 1
@@ -142,7 +142,7 @@ def do_train(
 
         if iteration % 200 == 0 or iteration == max_iter:
             val_loss_reduced, total_val_time = do_validation(model, data_loader_val, device, is_rotated)
-            
+
             total_time_str = str(datetime.timedelta(seconds=total_val_time))
             logger.info(
                 "validation time: {} ({:.4f} s / it)".format(

@@ -103,7 +103,7 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
 
         # 保证所有标注在图像大小范围内
         target = target.clip_to_image(remove_empty=True)
-        # TODO 给旋转框也做这个
+        rtarget = rtarget.clip_to_image(remove_empty=True)
 
         # 处理图像和target的转化
         if self._transforms is not None:

@@ -67,6 +67,17 @@ class RotatedBoxList(object):
 
         return torch.stack((left, top, right, bottom), dim=1)
 
+    def get_bbox_xywh(self):
+        dx = torch.abs(self.rbbox[:, 2] * torch.cos(self.rbbox[:, 4]) / 2.)
+        dy = torch.abs(self.rbbox[:, 3] * torch.sin(self.rbbox[:, 4]) / 2.)
+
+        w = dx * 2
+        h = dy * 2
+        x = self.rbbox[:, 0]
+        y = self.rbbox[:, 1]
+
+        return torch.stack((x, y, w, h), dim=1)
+
 
     # def convert(self, mode):
     #     if mode not in ("xyxy", "xywh"):

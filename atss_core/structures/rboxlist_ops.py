@@ -82,7 +82,7 @@ def convert_to_rbox(l, t, r, b, ang, xs, ys, image_sizes):
     h = l + r
     w = t + b
 
-    flip = torch.ones(ang.size())
+    flip = ang.new_ones(ang.size())
     flip[ang > 0] = -1
 
     pre_xc = (t - b)/2. * flip
