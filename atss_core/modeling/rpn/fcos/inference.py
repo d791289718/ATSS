@@ -192,7 +192,7 @@ class FCOSPostProcessor(torch.nn.Module):
             rboxlist.add_field("labels", per_class)
             rboxlist.add_field("scores", torch.sqrt(per_box_cls))
             # rboxlist = rboxlist.clip_to_image(remove_empty=True)
-            rboxlist = rboxlist.remove_outside_image(remove_empty=True)
+            rboxlist = rboxlist.remove_outside_image()
             rboxlist = remove_small_rotated_boxes(rboxlist, self.min_size)
             results.append(rboxlist)
 

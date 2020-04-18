@@ -64,7 +64,6 @@ class RotatedBoxList(object):
         else:
             raise ValueError(
                 "transform matrix mode has to be r2h or h2r, got {}".format(mode))
-        ang.squeeze_()
         transform_matrix_1 = torch.stack((torch.cos(ang), -1*torch.sin(ang)), dim=1)
         transform_matrix_2 = torch.stack((torch.sin(ang), torch.cos(ang)), dim=1)
         transform_matrix = torch.stack((transform_matrix_1, transform_matrix_2), dim=1)
@@ -237,7 +236,7 @@ class RotatedBoxList(object):
         bbox = self.get_bbox_xyxy()
         x_min, y_min, x_max, y_max = bbox.split(1, dim=-1)
         keep = (x_min >= 0) & (y_min >= 0) & (x_max <= self.size[0]) & (y_max <= self.size[1])
-        keep = torch.squeeze(keep)
+        keep = keep[:, 0]
         return self[keep]
 
     def area(self):
