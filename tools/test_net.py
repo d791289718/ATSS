@@ -66,7 +66,7 @@ def main():
     _ = checkpointer.load(cfg.MODEL.WEIGHT)
 
     # the same with run_test in train_net.py
-    iou_types = ("bbox",)
+    iou_types = ("segm",)
     if cfg.MODEL.MASK_ON:
         iou_types = iou_types + ("segm",)
     if cfg.MODEL.KEYPOINT_ON:

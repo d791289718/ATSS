@@ -21,7 +21,7 @@ def compute_on_dataset(model, data_loader, device, timer=None):
     results_dict = {}
     cpu_device = torch.device("cpu")
     for _, batch in enumerate(tqdm(data_loader)):
-        images, tatgets, rtargets = batch
+        images, tatgets, rtargets, image_ids = batch
         with torch.no_grad():
             if timer:
                 timer.tic()
@@ -86,10 +86,12 @@ def inference(
     total_timer = Timer()
     inference_timer = Timer()
     total_timer.tic()
+
     # predications is a dict {imgid: BoxList}
     predictions = compute_on_dataset(model, data_loader, device, inference_timer)
     # wait for all processes to complete before measuring the time
     synchronize()
+
     total_time = total_timer.toc()
     total_time_str = get_time_str(total_time)
     logger.info(
@@ -119,7 +121,7 @@ def inference(
         expected_results=expected_results,
         expected_results_sigma_tol=expected_results_sigma_tol,
     )
-
+    # 到这里是得到了预测的RotatedBoxList的结果，下面要和gt作比较了
     return evaluate(dataset=dataset,
                     predictions=predictions,
                     output_folder=output_folder,

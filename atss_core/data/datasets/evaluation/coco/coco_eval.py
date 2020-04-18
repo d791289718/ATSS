@@ -43,11 +43,17 @@ def do_coco_evaluation(
     logger.info("Preparing results for COCO format")
     coco_results = {}
     if "bbox" in iou_types:
-        logger.info("Preparing bbox results")
-        coco_results["bbox"] = prepare_for_coco_detection(predictions, dataset, is_rotated)
+        if not is_rotated:
+            logger.info("Preparing bbox results")
+            coco_results["bbox"] = prepare_for_coco_detection(predictions, dataset, is_rotated)
+        else:
+            logger.info("Preparing rotated bbox results")
+            coco_results["bbox"] = prepare_for_coco_rotated_detection(predictions, dataset)
     if "segm" in iou_types:
-        logger.info("Preparing segm results")
-        coco_results["segm"] = prepare_for_coco_segmentation(predictions, dataset)
+        # logger.info("Preparing segm results")
+        # coco_results["segm"] = prepare_for_coco_segmentation(predictions, dataset)
+        logger.info("Preparing rotated bbox results")
+        coco_results["segm"] = prepare_for_coco_rotated_detection(predictions, dataset)
     if 'keypoints' in iou_types:
         logger.info('Preparing keypoints results')
         coco_results['keypoints'] = prepare_for_coco_keypoint(predictions, dataset)
@@ -68,6 +74,50 @@ def do_coco_evaluation(
     if output_folder:
         torch.save(results, os.path.join(output_folder, "coco_results.pth"))
     return results, coco_results
+
+
+def prepare_for_coco_rotated_detection(predictions, dataset):
+    import pycocotools.mask as mask_util
+    import numpy as np
+
+    coco_results = []
+    for image_id, prediction in tqdm(enumerate(predictions)):
+        original_id = dataset.id_to_img_map[image_id]
+        if len(prediction) == 0:
+            continue
+
+        img_info = dataset.get_img_info(image_id)
+        image_width = img_info["width"]
+        image_height = img_info["height"]
+        prediction = prediction.resize((image_width, image_height))
+
+        prediction = prediction.convert('poly')
+
+        polys = prediction.rbbox.tolist()
+        scores = prediction.get_field("scores").tolist()
+        labels = prediction.get_field("labels").tolist()
+
+        rles = [
+            mask_util.frPyObjects([poly], image_height, image_width)
+            for poly in polys
+        ]
+        for rle in rles:
+            rle[0]["counts"] = rle[0]["counts"].decode("utf-8")
+
+        mapped_labels = [dataset.contiguous_category_id_to_json_id[i] for i in labels]
+
+        coco_results.extend(
+            [
+                {
+                    "image_id": original_id,
+                    "category_id": mapped_labels[k],
+                    "segmentation": rle[0],
+                    "score": scores[k],
+                }
+                for k, rle in enumerate(rles)
+            ]
+        )
+    return coco_results
 
 
 def prepare_for_coco_detection(predictions, dataset, is_rotated):
@@ -319,7 +369,9 @@ def evaluate_predictions_on_coco(
     from pycocotools.coco import COCO
     from pycocotools.cocoeval import COCOeval
 
-    coco_dt = coco_gt.loadRes(str(json_result_file)) if coco_results else COCO()
+    # ! tmp for test
+    coco_dt = coco_gt.loadRes(str('~/work/for_eval_test.json')) if coco_results else COCO()   # return COCO
+    # ! coco_dt = coco_gt.loadRes(str(json_result_file)) if coco_results else COCO()   # return COCO
 
     # coco_dt = coco_gt.loadRes(coco_results)
     coco_eval = COCOeval(coco_gt, coco_dt, iou_type)

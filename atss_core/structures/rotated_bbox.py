@@ -27,15 +27,15 @@ class RotatedBoxList(object):
             raise ValueError(
                 "Rotatedbbox should have 2 dimensions, got {}".format(rbbox.ndimension())
             )
-        if rbbox.size(-1) != 5:
+        if rbbox.size(-1) != 5 and rbbox.size(-1) != 8:
             raise ValueError(
                 "last dimension of Rotatedbbox should have a "
-                "size of 5, got {}".format(rbbox.size(-1))
+                "size of 5 or 8, got {}".format(rbbox.size(-1))
             )
-        if mode not in ("xywha"):
-            raise ValueError("mode should be 'xywha'")
+        if mode not in ("xywha", "poly"):
+            raise ValueError("mode should be 'xywha' or 'poly'")
 
-        self.rbbox = rbbox  # [[x1, y1, w1, h1, ang1], [x, y, w, h, ang]...]
+        self.rbbox = rbbox  # [[x1, y1, w1, h1, ang1], [x, y, w, h, ang]...] or [[x1, y1, ...x4, y4]]
         self.size = image_size  # (image_width, image_height)
         self.mode = mode
         self.extra_fields = {}
@@ -56,64 +56,75 @@ class RotatedBoxList(object):
         for k, v in bbox.extra_fields.items():
             self.extra_fields[k] = v
 
-    def get_bbox(self):
-        dx = torch.abs(self.rbbox[:, 2] * torch.cos(self.rbbox[:, 4]) / 2.)
-        dy = torch.abs(self.rbbox[:, 3] * torch.sin(self.rbbox[:, 4]) / 2.)
+    def _get_transform_matrix(self, mode):
+        if mode == "r2h":
+            ang = self.rbbox[:, -1]
+        elif mode == "h2r":
+            ang = self.rbbox[:, -1] * -1
+        else:
+            raise ValueError(
+                "transform matrix mode has to be r2h or h2r, got {}".format(mode))
+        ang.squeeze_()
+        transform_matrix_1 = torch.stack((torch.cos(ang), -1*torch.sin(ang)), dim=1)
+        transform_matrix_2 = torch.stack((torch.sin(ang), torch.cos(ang)), dim=1)
+        transform_matrix = torch.stack((transform_matrix_1, transform_matrix_2), dim=1)
+        return transform_matrix
 
-        left = self.rbbox[:, 0] - dx
-        right = self.rbbox[:, 0] + dx
-        top = self.rbbox[:, 1] - dy
-        bottom = self.rbbox[:, 1] + dy
-
-        return torch.stack((left, top, right, bottom), dim=1)
+    def get_bbox_xyxy(self):
+        if self.mode == "xywha":
+            tmp_box = self.convert("poly").rbbox
+        else:
+            tmp_box = self.rbbox
+        x_min, _ = torch.min(tmp_box[:, 0::2], dim=1)
+        y_min, _ = torch.min(tmp_box[:, 1::2], dim=1)
+        x_max, _ = torch.max(tmp_box[:, 0::2], dim=1)
+        y_max, _ = torch.max(tmp_box[:, 1::2], dim=1)
+        return torch.stack((x_min, y_min, x_max, y_max), dim=1)
 
     def get_bbox_xywh(self):
-        dx = torch.abs(self.rbbox[:, 2] * torch.cos(self.rbbox[:, 4]) / 2.)
-        dy = torch.abs(self.rbbox[:, 3] * torch.sin(self.rbbox[:, 4]) / 2.)
+        if self.mode == "xywha":
+            tmp_box = self.convert("poly").rbbox
+        else:
+            tmp_box = self.rbbox
+        x_min, _ = torch.min(tmp_box[:, 0::2], dim=1)
+        y_min, _ = torch.min(tmp_box[:, 1::2], dim=1)
 
-        w = dx * 2
-        h = dy * 2
-        x = self.rbbox[:, 0]
-        y = self.rbbox[:, 1]
+        return torch.stack((x_min, y_min, self.rbbox[:, 2], self.rbbox[:, 3]), dim=1)
 
-        return torch.stack((x, y, w, h), dim=1)
+    def convert(self, mode):
+        if mode not in ("poly", "xywha"):
+            raise ValueError("mode should be 'poly' or 'xywha'")
+        if mode == self.mode:
+            return self
 
+        if mode == "poly":
+            # 旋转矩阵
+            transform_matrix = self._get_transform_matrix("r2h")
 
-    # def convert(self, mode):
-    #     if mode not in ("xyxy", "xywh"):
-    #         raise ValueError("mode should be 'xyxy' or 'xywh'")
-    #     if mode == self.mode:
-    #         return self
-    #     # we only have two modes, so don't need to check
-    #     # self.mode
-    #     xmin, ymin, xmax, ymax = self._split_into_xyxy()
-    #     if mode == "xyxy":
-    #         bbox = torch.cat((xmin, ymin, xmax, ymax), dim=-1)
-    #         bbox = BoxList(bbox, self.size, mode=mode)
-    #     else:
-    #         TO_REMOVE = 1
-    #         bbox = torch.cat(
-    #             (xmin, ymin, xmax - xmin + TO_REMOVE, ymax - ymin + TO_REMOVE), dim=-1
-    #         )
-    #         bbox = BoxList(bbox, self.size, mode=mode)
-    #     bbox._copy_extra_fields(self)
-    #     return bbox
+            poly_list = []
+            for rbox, matrix in zip(self.rbbox, transform_matrix):
+                dx = rbox[2] / 2.
+                dy = rbox[3] / 2.
+                pre_loc = torch.tensor(
+                    [[-1*dx, -1*dy], [dx, -1*dy], [dx, dy], [-1*dx, dy]])
 
-    # def _split_into_xyxy(self):
-    #     if self.mode == "xyxy":
-    #         xmin, ymin, xmax, ymax = self.bbox.split(1, dim=-1)
-    #         return xmin, ymin, xmax, ymax
-    #     elif self.mode == "xywh":
-    #         TO_REMOVE = 1
-    #         xmin, ymin, w, h = self.bbox.split(1, dim=-1)
-    #         return (
-    #             xmin,
-    #             ymin,
-    #             xmin + (w - TO_REMOVE).clamp(min=0),
-    #             ymin + (h - TO_REMOVE).clamp(min=0),
-    #         )
-    #     else:
-    #         raise RuntimeError("Should not be here")
+                points = torch.bmm(matrix[None].expand(4, -1, -1), pre_loc[:, :, None])
+                points[:, 0, :] += rbox[0]
+                points[:, 1, :] += rbox[1]
+                loc = points.reshape(1, -1)
+                poly_list.append(loc)
+
+            rbbox = RotatedBoxList(torch.cat(poly_list), self.size, mode='poly')
+        elif mode == "xywha":
+            raise NotImplementedError
+        else:
+            raise NotImplementedError
+        # for k, v in self.extra_fields.items():
+        #     if not isinstance(v, torch.Tensor):
+        #         v = v.crop(box)
+        #     bbox.add_field(k, v)
+        rbbox._copy_extra_fields(self)
+        return rbbox
 
     def resize(self, size, *args, **kwargs):
         """
@@ -201,6 +212,123 @@ class RotatedBoxList(object):
             rbbox.add_field(k, v)
         return rbbox
 
+    # def clip_to_image(self, remove_empty=True):
+    #     bbox = self.convert("poly")
+    #     TO_REMOVE = 1
+
+    #     bbox[:, 0].clamp_(min=0, max=self.size[0] - TO_REMOVE)
+    #     bbox[:, 1].clamp_(min=0, max=self.size[1] - TO_REMOVE)
+    #     bbox[:, 2].clamp_(min=0, max=self.size[0] - TO_REMOVE)
+    #     bbox[:, 3].clamp_(min=0, max=self.size[1] - TO_REMOVE)
+    #     bbox[:, 5].clamp_(min=0, max=self.size[0] - TO_REMOVE)
+    #     bbox[:, 6].clamp_(min=0, max=self.size[1] - TO_REMOVE)
+    #     bbox[:, 7].clamp_(min=0, max=self.size[0] - TO_REMOVE)
+    #     bbox[:, 8].clamp_(min=0, max=self.size[1] - TO_REMOVE)
+
+    #     clipped_box = bbox.convert("xywha")
+
+    #     if remove_empty:
+    #         rbox = clipped_box.rbbox
+    #         keep = (rbox[:, 2] > 0) & (rbox[:, 3] > 0)
+    #         return clipped_box[keep]
+    #     return clipped_box
+
+    def remove_outside_image(self):
+        bbox = self.get_bbox_xyxy()
+        x_min, y_min, x_max, y_max = bbox.split(1, dim=-1)
+        keep = (x_min >= 0) & (y_min >= 0) & (x_max <= self.size[0]) & (y_max <= self.size[1])
+        keep = torch.squeeze(keep)
+        return self[keep]
+
+    def area(self):
+        rbox = self.rbbox
+        if self.mode == "xywha":
+            area = rbox[:, 2] * rbox[:, 3]
+        else:
+            raise RuntimeError("mode should be 'xywha'")
+
+        return area
+
+    # Tensor-like methods
+    def to(self, device):
+        rbbox = RotatedBoxList(self.rbbox.to(device), self.size, self.mode)
+        for k, v in self.extra_fields.items():
+            if hasattr(v, "to"):
+                v = v.to(device)
+            rbbox.add_field(k, v)
+        return rbbox
+
+    # 用选定的bbox构建一个新的实例
+    def __getitem__(self, item):
+        rbbox = RotatedBoxList(self.rbbox[item], self.size, self.mode)
+        for k, v in self.extra_fields.items():
+            rbbox.add_field(k, v[item])
+        return rbbox
+
+    def __len__(self):
+        return self.rbbox.shape[0]
+
+    def __repr__(self):
+        s = self.__class__.__name__ + "("
+        s += "num_boxes={}, ".format(len(self))
+        s += "image_width={}, ".format(self.size[0])
+        s += "image_height={}, ".format(self.size[1])
+        s += "mode={})".format(self.mode)
+        return s
+
+
+if __name__ == "__main__":
+    from math import pi
+    bbox = RotatedBoxList(
+        [[10, 10, 10, 10, -pi/4], [10, 10, 10, 10, pi/4], [10, 10, 5, 5, pi/2]],
+        (13, 13)
+    )
+
+    r_bbox = bbox.remove_outside_image()
+
+    # print(bbox.get_bbox_xyxy())
+    # print("==========")
+    # print(bbox.get_bbox_xywh())
+
+
+    p_bbox = bbox.convert('poly')
+    print(p_bbox.rbbox)
+
+    s_bbox = bbox.resize((50, 50))
+    print(s_bbox)
+    print(s_bbox.rbbox)
+
+    t_bbox = bbox.transpose(0)
+    print(t_bbox)
+    print(t_bbox.rbbox)
+
+    # def copy_with_fields(self, fields, skip_missing=False):
+    #     bbox = BoxList(self.bbox, self.size, self.mode)
+    #     if not isinstance(fields, (list, tuple)):
+    #         fields = [fields]
+    #     for field in fields:
+    #         if self.has_field(field):
+    #             bbox.add_field(field, self.get_field(field))
+    #         elif not skip_missing:
+    #             raise KeyError("Field '{}' not found in {}".format(field, self))
+    #     return bbox
+
+    # def _split_into_xyxy(self):
+    #     if self.mode == "xyxy":
+    #         xmin, ymin, xmax, ymax = self.bbox.split(1, dim=-1)
+    #         return xmin, ymin, xmax, ymax
+    #     elif self.mode == "xywh":
+    #         TO_REMOVE = 1
+    #         xmin, ymin, w, h = self.bbox.split(1, dim=-1)
+    #         return (
+    #             xmin,
+    #             ymin,
+    #             xmin + (w - TO_REMOVE).clamp(min=0),
+    #             ymin + (h - TO_REMOVE).clamp(min=0),
+    #         )
+    #     else:
+    #         raise RuntimeError("Should not be here")
+
     # def crop(self, box):
     #     """
     #     Cropss a rectangular region from this bounding box. The box is a
@@ -228,85 +356,3 @@ class RotatedBoxList(object):
     #             v = v.crop(box)
     #         bbox.add_field(k, v)
     #     return bbox.convert(self.mode)
-
-    # Tensor-like methods
-
-    def to(self, device):
-        rbbox = RotatedBoxList(self.rbbox.to(device), self.size, self.mode)
-        for k, v in self.extra_fields.items():
-            if hasattr(v, "to"):
-                v = v.to(device)
-            rbbox.add_field(k, v)
-        return rbbox
-
-    # 用选定的bbox构建一个新的实例
-    def __getitem__(self, item):
-        rbbox = RotatedBoxList(self.rbbox[item], self.size, self.mode)
-        for k, v in self.extra_fields.items():
-            rbbox.add_field(k, v[item])
-        return rbbox
-
-    def __len__(self):
-        return self.rbbox.shape[0]
-
-    def clip_to_image(self, remove_empty=True):
-        bbox = self.get_bbox()
-        left = bbox[:, 0]
-        right = bbox[:, 2]
-        top = bbox[:, 1]
-        bottom = bbox[:, 3]
-
-        TO_REMOVE = 1
-        left.clamp_(min=0, max=self.size[0] - TO_REMOVE)
-        right.clamp_(min=0, max=self.size[0] - TO_REMOVE)
-        top.clamp_(min=0, max=self.size[1] - TO_REMOVE)
-        bottom.clamp_(min=0, max=self.size[1] - TO_REMOVE)
-
-        self.rbbox[:, 0] = (left + right) / 2.
-        self.rbbox[:, 1] = (top + bottom) / 2.
-        self.rbbox[:, 2] = (right - left) / torch.abs(torch.cos(self.rbbox[:, 4]))
-        self.rbbox[:, 3] = (bottom - top) / torch.abs(torch.sin(self.rbbox[:, 4]))
-
-        if remove_empty:
-            rbox = self.rbbox
-            keep = (rbox[:, 2] > 0) & (rbox[:, 3] > 0)
-            return self[keep]
-        return self
-
-    def area(self):
-        rbox = self.rbbox
-        if self.mode == "xywha":
-            area = rbox[:, 2] * rbox[:, 3]
-        else:
-            raise RuntimeError("mode should be 'xywha'")
-
-        return area
-
-    def __repr__(self):
-        s = self.__class__.__name__ + "("
-        s += "num_boxes={}, ".format(len(self))
-        s += "image_width={}, ".format(self.size[0])
-        s += "image_height={}, ".format(self.size[1])
-        s += "mode={})".format(self.mode)
-        return s
-
-    # def copy_with_fields(self, fields, skip_missing=False):
-    #     bbox = BoxList(self.bbox, self.size, self.mode)
-    #     if not isinstance(fields, (list, tuple)):
-    #         fields = [fields]
-    #     for field in fields:
-    #         if self.has_field(field):
-    #             bbox.add_field(field, self.get_field(field))
-    #         elif not skip_missing:
-    #             raise KeyError("Field '{}' not found in {}".format(field, self))
-    #     return bbox
-
-if __name__ == "__main__":
-    bbox = RotatedBoxList([[10, 10, 10, 10, 0], [10, 10, 5, 5, 0]], (100, 100))
-    s_bbox = bbox.resize((5, 5))
-    print(s_bbox)
-    print(s_bbox.rbbox)
-
-    t_bbox = bbox.transpose(0)
-    print(t_bbox)
-    print(t_bbox.rbbox)
