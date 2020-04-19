@@ -40,7 +40,7 @@ def do_validation(model, data_loader_val, device, is_rotated):
     val_loss = 0.0
     start_val_time = time.time()
     with torch.no_grad():
-        for _, (images, targets, rtargets) in enumerate(data_loader_val[0], 0):
+        for _, (images, targets, rtargets, _) in enumerate(data_loader_val[0], 0):
             images = images.to(device)
             targets = [target.to(device) for target in targets]
             rtargets = [target.to(device) for target in rtargets]
