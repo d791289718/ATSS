@@ -70,6 +70,8 @@ class RotatedBoxList(object):
         return transform_matrix
 
     def get_bbox_xyxy(self):
+        if len(self.rbbox) == 0:
+            return self.rbbox
         if self.mode == "xywha":
             tmp_box = self.convert("poly").rbbox
         else:
@@ -81,6 +83,8 @@ class RotatedBoxList(object):
         return torch.stack((x_min, y_min, x_max, y_max), dim=1)
 
     def get_bbox_xywh(self):
+        if len(self.rbbox) == 0:
+            return self.rbbox
         if self.mode == "xywha":
             tmp_box = self.convert("poly").rbbox
         else:
@@ -97,6 +101,9 @@ class RotatedBoxList(object):
             return self
 
         if mode == "poly":
+            # rbbox为空
+            if len(self.rbbox == 0):
+                return self
             # 旋转矩阵
             transform_matrix = self._get_transform_matrix("r2h")
 
@@ -106,7 +113,7 @@ class RotatedBoxList(object):
                 dy = rbox[3] / 2.
                 pre_loc = torch.tensor(
                     [[-1*dx, -1*dy], [dx, -1*dy], [dx, dy], [-1*dx, dy]])
-
+                pre_loc = torch.as_tensor(pre_loc, device=rbox.device)
                 points = torch.bmm(matrix[None].expand(4, -1, -1), pre_loc[:, :, None])
                 points[:, 0, :] += rbox[0]
                 points[:, 1, :] += rbox[1]
@@ -114,6 +121,8 @@ class RotatedBoxList(object):
                 poly_list.append(loc)
 
             rbbox = RotatedBoxList(torch.cat(poly_list), self.size, mode='poly')
+            rbbox._copy_extra_fields(self)
+            return rbbox
         elif mode == "xywha":
             raise NotImplementedError
         else:
@@ -122,8 +131,7 @@ class RotatedBoxList(object):
         #     if not isinstance(v, torch.Tensor):
         #         v = v.crop(box)
         #     bbox.add_field(k, v)
-        rbbox._copy_extra_fields(self)
-        return rbbox
+
 
     def resize(self, size, *args, **kwargs):
         """
@@ -233,6 +241,8 @@ class RotatedBoxList(object):
     #     return clipped_box
 
     def remove_outside_image(self):
+        if len(self.rbbox) == 0:
+            return self
         bbox = self.get_bbox_xyxy()
         x_min, y_min, x_max, y_max = bbox.split(1, dim=-1)
         keep = (x_min >= 0) & (y_min >= 0) & (x_max <= self.size[0]) & (y_max <= self.size[1])
@@ -279,8 +289,8 @@ class RotatedBoxList(object):
 if __name__ == "__main__":
     from math import pi
     bbox = RotatedBoxList(
-        [[10, 10, 10, 10, -pi/4], [10, 10, 10, 10, pi/4], [10, 10, 5, 5, pi/2]],
-        (13, 13)
+        [[341.2143, 443.3325, 778.4297, 178.2595, -1.122944], [10, 10, 10, 10, pi/4], [10, 10, 5, 5, pi/2]],
+        (1172, 816)
     )
 
     r_bbox = bbox.remove_outside_image()

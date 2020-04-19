@@ -166,7 +166,7 @@ def make_data_loader(cfg, is_train=True, is_distributed=False, start_iter=0):
     dataset_list = cfg.DATASETS.TRAIN if is_train else cfg.DATASETS.TEST
 
     # transform中的Compose类
-    transforms = None if not is_train and cfg.TEST.BBOX_AUG.ENABLED else build_transforms(cfg, is_train, cfg.INPUT.ROTATED)
+    transforms = None if not is_train and cfg.TEST.BBOX_AUG.ENABLED else build_transforms(cfg, is_train)
     # If bbox aug is enabled in testing, simply set transforms to None and we will apply transforms later
 
     # list[COCODataset]，每个json-sile一个COCODataset实例类

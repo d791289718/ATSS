@@ -2,7 +2,7 @@
 from . import transforms as T
 
 
-def build_transforms(cfg, is_train=True, is_rotated = True):
+def build_transforms(cfg, is_train=True):
     # transform的参数设置
     if is_train:
         if cfg.INPUT.MIN_SIZE_RANGE_TRAIN[0] == -1:
@@ -26,24 +26,14 @@ def build_transforms(cfg, is_train=True, is_rotated = True):
     normalize_transform = T.Normalize(
         mean=cfg.INPUT.PIXEL_MEAN, std=cfg.INPUT.PIXEL_STD, to_bgr255=to_bgr255
     )
-    if not is_rotated:
-        transform = T.Compose(
-            [
-                T.Resize(min_size, max_size),
-                T.RandomHorizontalFlip(flip_prob),
-                T.ToTensor(),
-                normalize_transform,
-            ]
-        )
-        return transform
-    
-    #旋转的框框
+
     transform = T.Compose(
-            [
-                T.Resize(min_size, max_size),
-                T.RandomHorizontalFlip(flip_prob),
-                T.ToTensor(),
-                normalize_transform,
-            ]
+        [
+            # ! 不对图像resize处理
+            # T.Resize(min_size, max_size),
+            T.RandomHorizontalFlip(flip_prob),
+            T.ToTensor(),
+            normalize_transform,
+        ]
         )
     return transform
