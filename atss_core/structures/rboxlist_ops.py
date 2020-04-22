@@ -10,6 +10,7 @@ from atss_core.layers import nms as _box_nms
 from atss_core.layers import ml_nms as _box_ml_nms
 # from atss_core.layers.poly_nms import poly_nms_cuda
 
+
 def convert_to_ltrb_V3(xs, ys, xc, yc, w, h, ang):
     """
     from (xs, ys) and the rbox get the ltrb&ang
@@ -38,6 +39,7 @@ def convert_to_ltrb_V3(xs, ys, xc, yc, w, h, ang):
     b = w/2. + dw
     return l, t, r, b
 
+
 def convert_to_ltrb(xs, ys, xc, yc, w, h, ang):
     """
     from (xs, ys) and the rbox get the ltrb&ang
@@ -55,7 +57,7 @@ def convert_to_ltrb(xs, ys, xc, yc, w, h, ang):
     pre_loc = torch.stack((dx, dy), dim=2)
 
     # 旋转矩阵
-    ang = ang[0]
+    ang = ang[0] * -1
     transform_matrix_1 = torch.stack((torch.cos(ang), -1*torch.sin(ang)), dim=1)
     transform_matrix_2 = torch.stack((torch.sin(ang), torch.cos(ang)), dim=1)
     transform_matrix = torch.stack((transform_matrix_1, transform_matrix_2), dim=1)
@@ -70,10 +72,11 @@ def convert_to_ltrb(xs, ys, xc, yc, w, h, ang):
     rotated_loc_y = locations[:, :, 1] * flip
 
     l = h/2. - rotated_loc_y
-    t = w/2. - rotated_loc_x # budui
+    t = w/2. - rotated_loc_x
     r = rotated_loc_y + h/2.
     b = rotated_loc_x + w/2.
     return l, t, r, b
+
 
 def convert_to_rbox(l, t, r, b, ang, xs, ys, image_sizes):
     """
@@ -109,6 +112,7 @@ def convert_to_rbox(l, t, r, b, ang, xs, ys, image_sizes):
     rboxlist = RotatedBoxList(rboxes, (int(img_w), int(img_h)), mode="xywha")
     return rboxlist
 
+
 def remove_small_rotated_boxes(rboxlist, min_size):
     """
     Only keep boxes with both sides >= min_size
@@ -122,6 +126,17 @@ def remove_small_rotated_boxes(rboxlist, min_size):
         (ws >= min_size) & (hs >= min_size)
     ).nonzero().squeeze(1)
     return rboxlist[keep]
+
+
+def _cat(tensors, dim=0):
+    """
+    Efficient version of torch.cat that avoids a copy if there is only a single element in a list
+    """
+    assert isinstance(tensors, (list, tuple))
+    if len(tensors) == 1:
+        return tensors[0]
+    return torch.cat(tensors, dim)
+
 
 def cat_rboxlist(bboxes):
     """
@@ -151,14 +166,6 @@ def cat_rboxlist(bboxes):
 
     return cat_boxes
 
-def _cat(tensors, dim=0):
-    """
-    Efficient version of torch.cat that avoids a copy if there is only a single element in a list
-    """
-    assert isinstance(tensors, (list, tuple))
-    if len(tensors) == 1:
-        return tensors[0]
-    return torch.cat(tensors, dim)
 
 # TODO: 现在是hbb的iou，改成rbb的iou
 def rboxlist_ml_nms(rboxlist, nms_thresh, max_proposals=-1,

@@ -7,15 +7,16 @@ import torch
 from torch.nn import functional as F
 from torch import nn
 import os
-from ..utils import concat_box_prediction_layers
-# from atts_core.layers import L1Loss 
-from atss_core.layers import IOULoss
 from atss_core.layers import SigmoidFocalLoss
+from atss_core.layers import BoxL1Loss
+from atss_core.layers import AngL1Loss
+from atss_core.layers import IOULoss
 from atss_core.modeling.matcher import Matcher
 from atss_core.modeling.utils import cat
 from atss_core.structures.boxlist_ops import boxlist_iou
 from atss_core.structures.boxlist_ops import cat_boxlist
 from atss_core.structures.rboxlist_ops import convert_to_ltrb
+from ..utils import concat_box_prediction_layers
 
 
 INF = 100000000
@@ -52,8 +53,8 @@ class FCOSLossComputation(object):
         # we make use of IOU Loss for bounding boxes regression,
         # but we found that L1 in log scale can yield a similar performance
         # self.box_reg_loss_func = IOULoss(self.iou_loss_type)
-        self.box_reg_loss_func = nn.L1Loss(reduction="sum")
-        self.angle_reg_loss_func = nn.L1Loss(reduction="sum")
+        self.box_reg_loss_func = BoxL1Loss()
+        self.angle_reg_loss_func = AngL1Loss()
         self.centerness_loss_func = nn.BCEWithLogitsLoss(reduction="sum")       
 
     def get_sample_region(self, gt, strides, num_points_per, gt_xs, gt_ys, radius=1.0):
@@ -359,9 +360,9 @@ class FCOSLossComputation(object):
             ang_regression_flatten = torch.cat(ang_regression_flatten, dim=0)
             ang_targets_flatten = torch.cat(ang_targets_flatten, dim=0)
 
-
         pos_inds = torch.nonzero(labels_flatten > 0).squeeze(1)
 
+        # 仅仅对非背景(!=0)的计算centerness，reg
         box_regression_flatten = box_regression_flatten[pos_inds]
         reg_targets_flatten = reg_targets_flatten[pos_inds]
         centerness_flatten = centerness_flatten[pos_inds]
@@ -394,9 +395,11 @@ class FCOSLossComputation(object):
             #     centerness_targets,
             #     is_rotated
             # ) / sum_centerness_targets_avg_per_gpu
+
             reg_loss = self.box_reg_loss_func(
-                box_regression_flatten.reshape(-1),
-                reg_targets_flatten.reshape(-1),
+                box_regression_flatten,
+                reg_targets_flatten,
+                centerness_targets
             ) / num_pos_avg_per_gpu
 
             centerness_loss = self.centerness_loss_func(
@@ -406,29 +409,22 @@ class FCOSLossComputation(object):
 
             if is_rotated:
                 ang_loss = self.angle_reg_loss_func(
-                    ang_regression_flatten.reshape(-1),
-                    ang_targets_flatten.reshape(-1),
+                    ang_regression_flatten,
+                    ang_targets_flatten,
+                    centerness_targets
                 ) / num_pos_avg_per_gpu
             else:
                 ang_loss = None
 
         else:
-            # 如果没有目标，那么box ang的值都应该为0，所以和0算差值
-            # reg_loss = box_regression_flatten.sum()
-            # reduce_sum(centerness_flatten.new_tensor([0.0]))
-            # centerness_loss = centerness_flatten.sum()
-            # if is_rotated:
-            #     ang_loss = ang_regression_flatten.sum()
-            # else:
-            #     ang_loss = None
-
-            centerness_loss = reduce_sum(centerness_flatten.new_tensor([0.0]))
-            reg_loss = reduce_sum(box_regression_flatten.new_tensor([0.0]))
+            # pos_ind = None,这些东西也就是空的
+            reg_loss = box_regression_flatten.sum()
+            centerness_loss = centerness_flatten.sum()
             if is_rotated:
-                ang_loss = reduce_sum(ang_regression_flatten.new_tensor([0.0]))
+                ang_loss = ang_regression_flatten.sum()
             else:
                 ang_loss = None
-
+            
         return cls_loss, reg_loss, ang_loss, centerness_loss
 
 

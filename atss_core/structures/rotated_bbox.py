@@ -102,7 +102,7 @@ class RotatedBoxList(object):
 
         if mode == "poly":
             # rbbox为空
-            if len(self.rbbox == 0):
+            if len(self.rbbox) == 0:
                 return self
             # 旋转矩阵
             transform_matrix = self._get_transform_matrix("r2h")
@@ -219,34 +219,18 @@ class RotatedBoxList(object):
             rbbox.add_field(k, v)
         return rbbox
 
-    # def clip_to_image(self, remove_empty=True):
-    #     bbox = self.convert("poly")
-    #     TO_REMOVE = 1
-
-    #     bbox[:, 0].clamp_(min=0, max=self.size[0] - TO_REMOVE)
-    #     bbox[:, 1].clamp_(min=0, max=self.size[1] - TO_REMOVE)
-    #     bbox[:, 2].clamp_(min=0, max=self.size[0] - TO_REMOVE)
-    #     bbox[:, 3].clamp_(min=0, max=self.size[1] - TO_REMOVE)
-    #     bbox[:, 5].clamp_(min=0, max=self.size[0] - TO_REMOVE)
-    #     bbox[:, 6].clamp_(min=0, max=self.size[1] - TO_REMOVE)
-    #     bbox[:, 7].clamp_(min=0, max=self.size[0] - TO_REMOVE)
-    #     bbox[:, 8].clamp_(min=0, max=self.size[1] - TO_REMOVE)
-
-    #     clipped_box = bbox.convert("xywha")
-
-    #     if remove_empty:
-    #         rbox = clipped_box.rbbox
-    #         keep = (rbox[:, 2] > 0) & (rbox[:, 3] > 0)
-    #         return clipped_box[keep]
-    #     return clipped_box
-
     def remove_outside_image(self):
         if len(self.rbbox) == 0:
             return self
-        bbox = self.get_bbox_xyxy()
-        x_min, y_min, x_max, y_max = bbox.split(1, dim=-1)
-        keep = (x_min >= 0) & (y_min >= 0) & (x_max <= self.size[0]) & (y_max <= self.size[1])
-        keep = keep[:, 0]
+        if self.mode == "xywha":
+            tmp_box = self.convert("poly").rbbox
+        else:
+            tmp_box = self.rbbox
+
+        x_s = tmp_box[:, 0::2]
+        y_s = tmp_box[:, 1::2]
+        keep = (x_s >= 0) & (y_s >= 0) & (x_s <= self.size[0]) & (y_s <= self.size[1])
+        keep = keep[:, 0] & keep [:, 1] & keep[:, 2] & keep [:, 3]
         return self[keep]
 
     def area(self):

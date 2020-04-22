@@ -23,7 +23,7 @@ MODEL:
     # we only use dcn in the last layer of towers
     USE_DCN_IN_TOWER: False
 DATASETS:
-  TRAIN: ("HRSC_test", )
+  TRAIN: ("HRSC_train", )
   TEST: ("HRSC_val", )
 INPUT:
   MIN_SIZE_TRAIN: (800,)

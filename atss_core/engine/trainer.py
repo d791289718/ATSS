@@ -52,9 +52,10 @@ def do_validation(model, data_loader_val, device, is_rotated):
             losses_reduced = sum(loss for loss in loss_dict_reduced.values())
             val_loss += losses_reduced
 
+        val_loss /= len(data_loader_val[0])
+        val_loss_dict_reduced = {itm: loss / len(data_loader_val[0]) for itm, loss in loss_dict_reduced.items()}
         total_val_time = time.time() - start_val_time
-        
-    return val_loss, total_val_time
+    return val_loss, val_loss_dict_reduced, total_val_time
 
 
 def do_train(
@@ -141,17 +142,22 @@ def do_train(
             )
 
         if iteration % 200 == 0 or iteration == max_iter:
-            val_loss_reduced, total_val_time = do_validation(model, data_loader_val, device, is_rotated)
+            val_loss_reduced, val_loss_dict_reduced, total_val_time = do_validation(
+                model, data_loader_val, device, is_rotated)
 
             total_time_str = str(datetime.timedelta(seconds=total_val_time))
+            val_logger_list = ["{}: {:.4f} ".format(itm, loss) for itm, loss in val_loss_dict_reduced.items()]
             logger.info(
-                "validation time: {} ({:.4f} s / it)".format(
-                    total_time_str, total_val_time / (len(data_loader_val))
-                )
+                "validation total time: {} ({:.4f} s / it)".format(
+                    total_time_str, total_val_time)
             )
-            logger.info("validation loss: {}".format(val_loss_reduced))
+            logger.info("validation loss: {}".format(str("".join(val_logger_list))))
+            loss_dict_reduced_logger = {itm+"_train": loss for itm, loss in loss_dict_reduced.items()}
+            val_loss_dict_reduced_logger = {itm+"_val": loss for itm, loss in val_loss_dict_reduced.items()}
+            loss_dict_reduced_logger.update(val_loss_dict_reduced_logger)
             writer.add_scalars(
-                'Loss', {'train': losses_reduced, 'val': val_loss_reduced}, iteration)
+                'Loss', loss_dict_reduced_logger, iteration
+            )
 
         if iteration % checkpoint_period == 0:
             checkpointer.save("model_{:07d}".format(iteration), **arguments)
