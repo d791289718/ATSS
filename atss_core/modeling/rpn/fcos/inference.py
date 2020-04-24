@@ -141,9 +141,7 @@ class FCOSPostProcessor(torch.nn.Module):
         centerness = centerness.view(N, 1, H, W).permute(0, 2, 3, 1)
         centerness = centerness.reshape(N, -1).sigmoid()  # N, W*H
 
-        
-        # candidate_inds = box_cls > self.pre_nms_thresh
-        candidate_inds = box_cls > 0
+        candidate_inds = box_cls > self.pre_nms_thresh
         pre_nms_top_n = candidate_inds.view(N, -1).sum(1)  # 每个img > thresh的个数(in the current feature map)
         pre_nms_top_n = pre_nms_top_n.clamp(max=self.pre_nms_top_n)
 
@@ -153,10 +151,10 @@ class FCOSPostProcessor(torch.nn.Module):
         results = []
         for i in range(N):
             per_box_cls = box_cls[i]  # W*H, C
-            per_candidate_inds = candidate_inds[i]
-            per_box_cls = per_box_cls[per_candidate_inds]  # score ,size = (num, )
+            per_candidate_inds = candidate_inds[i]  # ! if == 0
+            per_box_cls = per_box_cls[per_candidate_inds]  # score: (num, )
 
-            per_candidate_nonzeros = per_candidate_inds.nonzero()
+            per_candidate_nonzeros = per_candidate_inds.nonzero()  # retuen tuple
             per_box_loc = per_candidate_nonzeros[:, 0]  # feature_map上点的索引
             per_class = per_candidate_nonzeros[:, 1] + 1  # class索引
 
@@ -171,9 +169,9 @@ class FCOSPostProcessor(torch.nn.Module):
 
             per_pre_nms_top_n = pre_nms_top_n[i]
 
-            if per_candidate_inds.sum().item() > per_pre_nms_top_n.item():
+            if per_candidate_inds.sum().item() > per_pre_nms_top_n.item():  # > 1000个
                 per_box_cls, top_k_indices = \
-                    per_box_cls.topk(per_pre_nms_top_n, sorted=False)
+                    per_box_cls.topk(per_pre_nms_top_n, sorted=False)  # per_pre_nms_top_n最大为1000
                 per_class = per_class[top_k_indices]
                 per_box_regression = per_box_regression[top_k_indices]
                 per_locations = per_locations[top_k_indices]
@@ -213,18 +211,19 @@ class FCOSPostProcessor(torch.nn.Module):
                 applying box decoding and NMS
         """
         sampled_boxes = []
+        # over features
         for _, (l, o, b, a, c) in enumerate(zip(locations, box_cls, box_regression, ang_regression, centerness)):
             if not is_rotated:
                 sampled_boxes.append(
                     self.forward_for_single_feature_map(l, o, b, c, image_sizes)
-                )
+                )  # return 每张图在当前feature的RBoxList[[feture1的[图1], [图2]],[],[]]
             else:
                 sampled_boxes.append(
                     self.rotated_forward_for_single_feature_map(l, o, b, a, c, image_sizes)
                 )
-        
-        boxlists = list(zip(*sampled_boxes))
-        boxlists = [cat_rboxlist(boxlist) for boxlist in boxlists]
+
+        boxlists = list(zip(*sampled_boxes))  # list的元素是每个图的
+        boxlists = [cat_rboxlist(boxlist) for boxlist in boxlists]  # 每个图的结果cat成一个RBoxList
 
         if not self.bbox_aug_enabled:
             boxlists = self.select_over_all_levels(boxlists, is_rotated)
@@ -236,7 +235,7 @@ class FCOSPostProcessor(torch.nn.Module):
     # TODO Yang: solve this issue in the future. No good solution
     # right now.
     def select_over_all_levels(self, boxlists, is_rotated):
-        num_images = len(boxlists)
+        num_images = len(boxlists)  # N
         results = []
         for i in range(num_images):
             # multiclass nms
@@ -247,7 +246,7 @@ class FCOSPostProcessor(torch.nn.Module):
             number_of_detections = len(result)
 
             # Limit to max_per_image detections **over all classes**
-            if number_of_detections > self.fpn_post_nms_top_n > 0:
+            if number_of_detections > self.fpn_post_nms_top_n > 0:  # 100
                 cls_scores = result.get_field("scores")
                 image_thresh, _ = torch.kthvalue(
                     cls_scores.cpu(),
@@ -268,12 +267,12 @@ def make_fcos_postprocessor(config):
     bbox_aug_enabled = config.TEST.BBOX_AUG.ENABLED
 
     box_selector = FCOSPostProcessor(
-        pre_nms_thresh=pre_nms_thresh,
-        pre_nms_top_n=pre_nms_top_n,
-        nms_thresh=nms_thresh,
-        fpn_post_nms_top_n=fpn_post_nms_top_n,
+        pre_nms_thresh=pre_nms_thresh,  # 0.05
+        pre_nms_top_n=pre_nms_top_n,  # 1000
+        nms_thresh=nms_thresh,  # 0.6
+        fpn_post_nms_top_n=fpn_post_nms_top_n,  # 100
         min_size=0,
-        num_classes=config.MODEL.FCOS.NUM_CLASSES,
+        num_classes=config.MODEL.FCOS.NUM_CLASSES,  # 2
         bbox_aug_enabled=bbox_aug_enabled
     )
 

@@ -212,7 +212,7 @@ class FCOSModule(torch.nn.Module):
             box_cls, box_regression, centerness = self.head(features, is_rotated)
             ang_regression = None
         locations = self.compute_locations(features)
-        
+
         if self.training:
             return self._forward_train(
                 locations, box_cls,

@@ -151,12 +151,15 @@ def do_train(
                 "validation total time: {} ({:.4f} s / it)".format(
                     total_time_str, total_val_time)
             )
-            logger.info("validation loss: {}".format(str("".join(val_logger_list))))
+            logger.info("validation loss: {}".format(val_loss_reduced, str("".join(val_logger_list))))
             loss_dict_reduced_logger = {itm+"_train": loss for itm, loss in loss_dict_reduced.items()}
             val_loss_dict_reduced_logger = {itm+"_val": loss for itm, loss in val_loss_dict_reduced.items()}
-            loss_dict_reduced_logger.update(val_loss_dict_reduced_logger)
+            val_loss_dict_reduced_logger.update(loss_dict_reduced_logger)
             writer.add_scalars(
-                'Loss', loss_dict_reduced_logger, iteration
+                'Loss_dict', val_loss_dict_reduced_logger, iteration
+            )
+            writer.add_scalars(
+                "Loss_sum", {'train': losses_reduced,'val': val_loss_reduced}, iteration
             )
 
         if iteration % checkpoint_period == 0:

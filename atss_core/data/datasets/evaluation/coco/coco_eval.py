@@ -241,6 +241,7 @@ def prepare_for_coco_keypoint(predictions, dataset):
             'score': scores[k]} for k, keypoint in enumerate(keypoints)])
     return coco_results
 
+
 # inspired from Detectron
 def evaluate_box_proposals(
     predictions, dataset, thresholds=None, area="all", limit=None

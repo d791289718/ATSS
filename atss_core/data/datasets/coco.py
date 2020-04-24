@@ -16,7 +16,11 @@ def _count_visible_keypoints(anno):
 
 
 def _has_only_empty_bbox(anno):
-    return all(any(o <= 1 for o in obj["bbox"][2:]) for obj in anno)
+    return all(any(o <= 1 for o in obj["rbox"][2:-1]) for obj in anno)
+
+# TODO: finish this
+# def _has_only_outside_rbox(anno):
+#     return all(any(o <= 1 for o in obj["segmentation"][2:-1]) for obj in anno)
 
 
 def has_valid_annotation(anno):
@@ -26,6 +30,9 @@ def has_valid_annotation(anno):
     # if all boxes have close to zero area, there is no annotation
     if _has_only_empty_bbox(anno):
         return False
+    # # if all segmentation are out of images, there is no annoation
+    # if _has_only_outside_rbox(anno):
+    #     return False
     # keypoints task have a slight different critera for considering
     # if an annotation is valid
     if "keypoints" not in anno[0]:

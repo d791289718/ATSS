@@ -84,8 +84,9 @@ def train(cfg, local_rank, distributed):
     
     # 每间隔多少个循环保存一次模型参数
     checkpoint_period = cfg.SOLVER.CHECKPOINT_PERIOD
-
+    # print(model)
     # 循环迭代
+    print(model)
     do_train(
         model,
         data_loader,

@@ -19,7 +19,7 @@ class ImageList(object):
             image_sizes (list[tuple[int, int]])
         """
         self.tensors = tensors
-        self.image_sizes = image_sizes
+        self.image_sizes = image_sizes  # h, w
 
     def to(self, *args, **kwargs):
         cast_tensor = self.tensors.to(*args, **kwargs)

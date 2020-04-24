@@ -2,14 +2,16 @@
 import torch
 import cv2
 import math
+import numpy as np
 from math import pi
+import DOTA_devkit.polyiou as polyiou
 
 from atss_core.structures.rotated_bbox import RotatedBoxList
 
 from atss_core.layers import nms as _box_nms
 from atss_core.layers import ml_nms as _box_ml_nms
 # from atss_core.layers.poly_nms import poly_nms_cuda
-
+# ! check to support 空的rbolist，为什么boxlist支持空的，还是他不可能出现空的？
 
 def convert_to_ltrb_V3(xs, ys, xc, yc, w, h, ang):
     """
@@ -80,34 +82,35 @@ def convert_to_ltrb(xs, ys, xc, yc, w, h, ang):
 
 def convert_to_rbox(l, t, r, b, ang, xs, ys, image_sizes):
     """
+    l,t,r,b,ang,xs,xy dim = 1
     return RotatedBoxlist
     """
+    img_h, img_w = image_sizes # imagelist的size是(h, w)
+    if len(ang) == 0:
+        return RotatedBoxList(torch.tensor([], device=ang.device),
+        (int(img_w), int(img_h)), mode="xywha")
     h = l + r
     w = t + b
 
     flip = ang.new_ones(ang.size())
     flip[ang > 0] = -1
 
-    pre_xc = (t - b)/2. * flip
-    pre_yc = (l - r)/2. * flip
+    pre_xc = (t - b) / 2. * flip
+    pre_yc = (l - r) / 2. * flip
     pre_loc = torch.stack((pre_xc, pre_yc), dim=1)
 
-    ang = -1 * ang
-    # 旋转矩阵
-    ang.squeeze_()
-    transform_matrix_1 = torch.stack((torch.cos(ang), -1*torch.sin(ang)), dim=1)
-    transform_matrix_2 = torch.stack((torch.sin(ang), torch.cos(ang)), dim=1)
+    transform_matrix_1 = torch.stack((torch.cos(-ang), -torch.sin(-ang)), dim=1)
+    transform_matrix_2 = torch.stack((torch.sin(-ang), torch.cos(-ang)), dim=1)
     transform_matrix = torch.stack((transform_matrix_1, transform_matrix_2), dim=1)
 
     locations = torch.bmm(transform_matrix, pre_loc[:, :, None])
-    locations = torch.squeeze(locations)
+    locations = torch.squeeze(locations, -1)
 
     dx = locations[:, 0]
     dy = locations[:, 1]
     xc = xs + dx
     yc = ys - dy  # 因为和图像中的纵坐标走向不一样
 
-    img_h, img_w = image_sizes
     rboxes = torch.stack((xc, yc, w, h, ang), dim=1)
     rboxlist = RotatedBoxList(rboxes, (int(img_w), int(img_h)), mode="xywha")
     return rboxlist
@@ -121,6 +124,8 @@ def remove_small_rotated_boxes(rboxlist, min_size):
         boxlist (RotatedBoxlist)
         min_size (int)
     """
+    if len(rboxlist.rbbox) == 0:
+        return rboxlist
     _, _, ws, hs, _ = rboxlist.rbbox.unbind(dim=1)
     keep = (
         (ws >= min_size) & (hs >= min_size)
@@ -167,7 +172,7 @@ def cat_rboxlist(bboxes):
     return cat_boxes
 
 
-# TODO: 现在是hbb的iou，改成rbb的iou
+# TODO：仅实现了一类的nms
 def rboxlist_ml_nms(rboxlist, nms_thresh, max_proposals=-1,
                    score_field="scores", label_field="labels"):
     """
@@ -175,7 +180,7 @@ def rboxlist_ml_nms(rboxlist, nms_thresh, max_proposals=-1,
     in a boxlist field via score_field.
 
     Arguments:
-        boxlist(BoxList)
+        boxlist(RotatedBoxList)
         nms_thresh (float)
         max_proposals (int): if > 0, then only the top max_proposals are kept
             after non-maximum suppression
@@ -183,63 +188,87 @@ def rboxlist_ml_nms(rboxlist, nms_thresh, max_proposals=-1,
     """
     if nms_thresh <= 0:
         return rboxlist
+    if len(rboxlist.rbbox) == 0:
+        return rboxlist
     mode = rboxlist.mode
-
-    boxes = rboxlist.get_bbox_xyxy()
     scores = rboxlist.get_field(score_field)
     labels = rboxlist.get_field(label_field)
-    keep = _box_ml_nms(boxes, scores, labels.float(), nms_thresh)
+
+    # convert to numpy
+    dets = rboxlist.convert("poly").rbbox
+    if isinstance(dets, torch.Tensor):
+        dets = dets.cpu().numpy().astype(np.float64)
+    if isinstance(nms_thresh, torch.Tensor):
+        nms_thresh = nms_thresh.cpu().numpy().astype(np.float64)
+    if isinstance(scores, torch.Tensor):
+        scores = scores.cpu().numpy().astype(np.float64)
+
+    # 准备工作
+    x1 = np.min(dets[:, 0::2], axis=1)
+    y1 = np.min(dets[:, 1::2], axis=1)
+    x2 = np.max(dets[:, 0::2], axis=1)
+    y2 = np.max(dets[:, 1::2], axis=1)
+    areas = (x2 - x1 + 1) * (y2 - y1 + 1)
+
+    polys = []
+    for i in range(len(dets)):
+        tm_polygon = polyiou.VectorDouble([dets[i][0], dets[i][1],
+                                            dets[i][2], dets[i][3],
+                                            dets[i][4], dets[i][5],
+                                            dets[i][6], dets[i][7]])
+        polys.append(tm_polygon)
+    order = scores.argsort()[::-1]  # scores从大到小的索引
+
+    # 正式开始
+    keep = []
+    while order.size > 0:
+        ovr = []
+        i = order[0]  # score最大的索引id
+        keep.append(i)  # 加入该id
+        # if order.size == 0:
+        #     break
+        xx1 = np.maximum(x1[i], x1[order[1:]])  # 除了最大score的poly，剩下的poly
+        yy1 = np.maximum(y1[i], y1[order[1:]])
+        xx2 = np.minimum(x2[i], x2[order[1:]])
+        yy2 = np.minimum(y2[i], y2[order[1:]])
+        w = np.maximum(0.0, xx2 - xx1)
+        h = np.maximum(0.0, yy2 - yy1)
+        hbb_inter = w * h
+        hbb_ovr = hbb_inter / (areas[i] + areas[order[1:]] - hbb_inter)  # numpy
+        # h_keep_inds = np.where(hbb_ovr == 0)[0]
+        h_inds = np.where(hbb_ovr > 0)[0]
+        tmp_order = order[h_inds + 1]
+        for j in range(tmp_order.size):
+            iou = polyiou.iou_poly(polys[i], polys[tmp_order[j]])
+            hbb_ovr[h_inds[j]] = iou
+            # ovr.append(iou)
+            # ovr_index.append(tmp_order[j])
+
+        # ovr = np.array(ovr)
+        # ovr_index = np.array(ovr_index)
+        # print('ovr: ', ovr)
+        # print('thresh: ', thresh)
+        try:
+            if math.isnan(ovr[0]):
+                assert False
+        except:
+            pass
+        inds = np.where(hbb_ovr <= nms_thresh)[0]
+
+        # order_obb = ovr_index[inds]
+        # print('inds: ', inds)
+        # order_hbb = order[h_keep_inds + 1]
+        order = order[inds + 1]
+        # pdb.set_trace()
+        # order = np.concatenate((order_obb, order_hbb), axis=0).astype(np.int)
+
+    # result_dets = torch.from_numpy(dets[keep, :]).to(device)
+    # keep_id = torch.from_numpy(np.array(keep)).to(device)
     if max_proposals > 0:
         keep = keep[: max_proposals]
     rboxlist = rboxlist[keep]
-    return rboxlist
+    return rboxlist.convert(mode)
 
-# TODO: poly版本的nms但是没测试，from DOTA
-def poly_nms(dets, iou_thr, device_id=None):
-    """Dispatch to either CPU or GPU NMS implementations.
-
-    The input can be either a torch tensor or numpy array. GPU NMS will be used
-    if the input is a gpu tensor or device_id is specified, otherwise CPU NMS
-    will be used. The returned type will always be the same as inputs.
-
-    Arguments:
-        dets (torch.Tensor or np.ndarray): bboxes with scores.
-        iou_thr (float): IoU threshold for NMS.
-        device_id (int, optional): when `dets` is a numpy array, if `device_id`
-            is None, then cpu nms is used, otherwise gpu_nms will be used.
-
-    Returns:
-        tuple: kept bboxes and indice, which is always the same data type as
-            the input.
-    """
-    # convert dets (tensor or numpy array) to tensor
-    # import pdb
-    # print('in nms wrapper')
-    # pdb.set_trace()
-    if isinstance(dets, torch.Tensor):
-        is_numpy = False
-        dets_th = dets
-    elif isinstance(dets, np.ndarray):
-        is_numpy = True
-        device = 'cpu' if device_id is None else 'cuda:{}'.format(device_id)
-        dets_th = torch.from_numpy(dets).to(device)
-    else:
-        raise TypeError(
-            'dets must be either a Tensor or numpy array, but got {}'.format(
-                type(dets)))
-
-    # execute cpu or cuda nms
-    if dets_th.shape[0] == 0:
-        inds = dets_th.new_zeros(0, dtype=torch.long)
-    else:
-        if dets_th.is_cuda:
-            inds = poly_nms_cuda.poly_nms(dets_th, iou_thr)
-        else:
-            raise NotImplementedError
-
-    if is_numpy:
-        raise NotImplementedError
-    return dets[inds, :], inds
 
 if __name__ == "__main__":
     # # test convert_to_ltrb
@@ -264,6 +293,34 @@ if __name__ == "__main__":
     xs = torch.randn(3)
     ys = torch.randn(3)
 
+
+# def rboxlist_ml_nms(rboxlist, nms_thresh, max_proposals=-1,
+#                    score_field="scores", label_field="labels"):
+#     """
+#     Performs non-maximum suppression on a boxlist, with scores specified
+#     in a boxlist field via score_field.
+
+#     Arguments:
+#         boxlist(BoxList)
+#         nms_thresh (float)
+#         max_proposals (int): if > 0, then only the top max_proposals are kept
+#             after non-maximum suppression
+#         score_field (str)
+#     """
+#     if nms_thresh <= 0:
+#         return rboxlist
+#     mode = rboxlist.mode
+
+#     boxes = rboxlist.get_bbox_xyxy()
+#     scores = rboxlist.get_field(score_field)
+#     labels = rboxlist.get_field(label_field)
+#     keep = _box_ml_nms(boxes, scores, labels.float(), nms_thresh)
+#     if max_proposals > 0:
+#         keep = keep[: max_proposals]
+#     rboxlist = rboxlist[keep]
+#     return rboxlist
+
+
 def boxlist_nms(boxlist, nms_thresh, max_proposals=-1, score_field="scores"):
     """
     Performs non-maximum suppression on a boxlist, with scores specified
@@ -287,10 +344,6 @@ def boxlist_nms(boxlist, nms_thresh, max_proposals=-1, score_field="scores"):
         keep = keep[: max_proposals]
     boxlist = boxlist[keep]
     return boxlist.convert(mode)
-
-
-
-
 
 
 # implementation from https://github.com/kuangliu/torchcv/blob/master/torchcv/utils/box.py
@@ -331,50 +384,3 @@ def boxlist_iou(boxlist1, boxlist2):
 
     iou = inter / (area1[:, None] + area2 - inter)
     return iou
-
-
-
-# def convert_to_ltrb_V2(xs, ys, xc, yc, w, h, ang):
-#     """
-#     from (xs, ys) and the rbox get the ltrb&ang
-#     xs, ys:size=(num_point, 1)
-#     others:size=(1, num_box)
-#     """
-#     num_point = xs.size(0)
-#     num_box = xc.size(1)
-#     dx = xs - xc
-#     dy = ys - yc
-
-#     # print(dx)
-#     # print(dy)
-#     vec1 = torch.stack((dx, dy), dim = 2)
-#     # print(vec1.size())
-#     vec2 = torch.stack((torch.ones(ang.size()), -1 * torch.tan(ang)), dim=2)
-#     vec2 = vec2.expand(num_point, -1, -1)
-#     # print(vec2[:,:,1])
-   
-#     norm1 = torch.norm(vec1, dim=2, keepdim=True)
-#     norm2 = torch.norm(vec2, dim=2, keepdim=True)
-
-#     cos_theta = (vec1 * vec2).sum(2) / torch.reshape((norm1 * norm2),(num_point, num_box))
-
-#     flip2 = torch.zeros(num_point, num_box)
-#     flip2[dy > 0] = 1
-#     flip2[dy <= 0] = -1
-#     theta = torch.acos(cos_theta) * flip2
-
-#     dis = (dx.pow(2) + dy.pow(2)).sqrt()
-    
-#     # ang > 0 --> -1; ang < 0 --> 1
-#     flip = torch.zeros(1, num_box)
-#     flip[ang > 0] = -1
-#     flip[ang <= 0] = 1
-
-#     dw = dis * torch.sin(theta) * flip
-#     dh = dis * torch.cos(theta) * flip
-
-#     l = h/2. - dh
-#     t = w/2. - dw
-#     r = h/2. + dh
-#     b = w/2. + dw
-#     return l, t, r, b
