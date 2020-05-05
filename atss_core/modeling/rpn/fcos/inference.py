@@ -212,18 +212,22 @@ class FCOSPostProcessor(torch.nn.Module):
         """
         sampled_boxes = []
         # over features
-        for _, (l, o, b, a, c) in enumerate(zip(locations, box_cls, box_regression, ang_regression, centerness)):
-            if not is_rotated:
+        
+        if not is_rotated:
+            for _, (l, o, b, c) in enumerate(zip(locations, box_cls, box_regression, ang_regression, centerness)):
                 sampled_boxes.append(
                     self.forward_for_single_feature_map(l, o, b, c, image_sizes)
                 )  # return 每张图在当前feature的RBoxList[[feture1的[图1], [图2]],[],[]]
-            else:
+
+            boxlists = list(zip(*sampled_boxes))  # list的元素是每个图的
+            boxlists = [cat_boxlist(boxlist) for boxlist in boxlists]  # 每个图的结果cat成一个RBoxList
+        else:
+            for _, (l, o, b, a, c) in enumerate(zip(locations, box_cls, box_regression, ang_regression, centerness)):
                 sampled_boxes.append(
                     self.rotated_forward_for_single_feature_map(l, o, b, a, c, image_sizes)
                 )
-
-        boxlists = list(zip(*sampled_boxes))  # list的元素是每个图的
-        boxlists = [cat_rboxlist(boxlist) for boxlist in boxlists]  # 每个图的结果cat成一个RBoxList
+            boxlists = list(zip(*sampled_boxes))  # list的元素是每个图的
+            boxlists = [cat_rboxlist(boxlist) for boxlist in boxlists]  # 每个图的结果cat成一个RBoxList
 
         if not self.bbox_aug_enabled:
             boxlists = self.select_over_all_levels(boxlists, is_rotated)

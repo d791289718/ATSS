@@ -2,7 +2,8 @@
 import datetime
 import logging
 import time
-
+from collections import defaultdict
+ 
 import torch
 import torch.distributed as dist
 from torch.utils.tensorboard import SummaryWriter
@@ -39,6 +40,7 @@ def reduce_loss_dict(loss_dict):
 def do_validation(model, data_loader_val, device, is_rotated):
     val_loss = 0.0
     start_val_time = time.time()
+    val_loss_dict_reduced = defaultdict(float)
     with torch.no_grad():
         for _, (images, targets, rtargets, _) in enumerate(data_loader_val[0], 0):
             images = images.to(device)
@@ -51,9 +53,11 @@ def do_validation(model, data_loader_val, device, is_rotated):
             loss_dict_reduced = reduce_loss_dict(loss_dict)
             losses_reduced = sum(loss for loss in loss_dict_reduced.values())
             val_loss += losses_reduced
+            for itm, loss in loss_dict_reduced.items():
+                val_loss_dict_reduced[itm] += loss
 
         val_loss /= len(data_loader_val[0])
-        val_loss_dict_reduced = {itm: loss / len(data_loader_val[0]) for itm, loss in loss_dict_reduced.items()}
+        val_loss_dict_reduced = {itm: loss / len(data_loader_val[0]) for itm, loss in val_loss_dict_reduced.items()}
         total_val_time = time.time() - start_val_time
     return val_loss, val_loss_dict_reduced, total_val_time
 
@@ -80,7 +84,8 @@ def do_train(
     # 计时
     start_training_time = time.time()
     end = time.time()
-    pytorch_1_1_0_or_later = is_pytorch_1_1_0_or_later()
+    # pytorch_1_1_0_or_later = is_pytorch_1_1_0_or_later()
+    pytorch_1_1_0_or_later = True
     # tensorboard
     writer = SummaryWriter()
 
@@ -151,7 +156,7 @@ def do_train(
                 "validation total time: {} ({:.4f} s / it)".format(
                     total_time_str, total_val_time)
             )
-            logger.info("validation loss: {}".format(val_loss_reduced, str("".join(val_logger_list))))
+            logger.info("validation: loss {} {}".format(val_loss_reduced, str("".join(val_logger_list))))
             loss_dict_reduced_logger = {itm+"_train": loss for itm, loss in loss_dict_reduced.items()}
             val_loss_dict_reduced_logger = {itm+"_val": loss for itm, loss in val_loss_dict_reduced.items()}
             val_loss_dict_reduced_logger.update(loss_dict_reduced_logger)
@@ -159,7 +164,7 @@ def do_train(
                 'Loss_dict', val_loss_dict_reduced_logger, iteration
             )
             writer.add_scalars(
-                "Loss_sum", {'train': losses_reduced,'val': val_loss_reduced}, iteration
+                "Loss_sum", {'train': losses_reduced, 'val': val_loss_reduced}, iteration
             )
 
         if iteration % checkpoint_period == 0:

@@ -30,7 +30,7 @@ def has_valid_annotation(anno):
     # if all boxes have close to zero area, there is no annotation
     if _has_only_empty_bbox(anno):
         return False
-    # # if all segmentation are out of images, there is no annoation
+    # if all segmentation are out of images, there is no annoation
     # if _has_only_outside_rbox(anno):
     #     return False
     # keypoints task have a slight different critera for considering

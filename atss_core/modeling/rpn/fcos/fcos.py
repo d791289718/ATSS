@@ -27,6 +27,7 @@ class FCOSHead(torch.nn.Module):
         self.centerness_on_reg = cfg.MODEL.FCOS.CENTERNESS_ON_REG
         self.centerness_independent = cfg.MODEL.FCOS.CENTERNESS_INDEPENDENT
         self.use_dcn_in_tower = cfg.MODEL.FCOS.USE_DCN_IN_TOWER
+        self.is_rotated = cfg.INPUT.ROTATED
 
         cls_tower = []
         bbox_tower = []

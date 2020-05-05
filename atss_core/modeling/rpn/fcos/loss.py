@@ -185,7 +185,7 @@ class FCOSLossComputation(object):
         reg_targets = []
         ang_targets = []
         xs, ys = locations[:, 0], locations[:, 1]
-        
+
         # over N(=16) images
         for im_i in range(len(rtargets)):
             targets_per_im = rtargets[im_i]
@@ -424,7 +424,7 @@ class FCOSLossComputation(object):
                 ang_loss = ang_regression_flatten.sum()
             else:
                 ang_loss = None
-            
+
         return cls_loss, reg_loss, ang_loss, centerness_loss
 
 
