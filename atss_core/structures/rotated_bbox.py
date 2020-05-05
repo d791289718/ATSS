@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
 import torch
+from math import pi
 
 # transpose
 FLIP_LEFT_RIGHT = 0
@@ -65,7 +66,7 @@ class RotatedBoxList(object):
         else:
             raise ValueError(
                 "transform matrix mode has to be r2h or h2r, got {}".format(mode))
-        transform_matrix_1 = torch.stack((torch.cos(ang), -1*torch.sin(ang)), dim=1)
+        transform_matrix_1 = torch.stack((torch.cos(ang), -torch.sin(ang)), dim=1)
         transform_matrix_2 = torch.stack((torch.sin(ang), torch.cos(ang)), dim=1)
         transform_matrix = torch.stack((transform_matrix_1, transform_matrix_2), dim=1)
         return transform_matrix
@@ -126,13 +127,36 @@ class RotatedBoxList(object):
             return rbbox
         elif mode == "xywha":
             raise NotImplementedError
+            # if len(self.rbbox) == 0:
+            #     return self
+
+            # transform_matrix = self._get_transform_matrix("h2r")
+
+            # box_list = []
+            # for poly, matrix in zip(self.rbbox, transform_matrix):
+            #     x_s = poly[0::2]
+            #     y_s = poly[1::2]
+            #     x_min = torch.min(x_s)
+            #     y_min = torch.min(y_s)
+            #     x_max = torch.max(x_s)
+            #     y_max = torch.max(y_s)
+
+            #     xc = (x_min + x_max) / 2.
+            #     yc = (y_min + y_max) / 2.
+
+            #     pre_loc = torch.stack((x_s - xc, y_s - yc), dim=1)
+            #     pre_loc = torch.as_tensor(pre_loc, device=poly.device)
+            #     points = torch.bmm(matrix[None].expand(4, -1, -1), pre_loc[:, :, None])
+            #     points[:, 0, :] += xc
+            #     points[:, 1, :] += yc
+            #     loc = points.reshape(1, -1)
+            #     box_list.append(loc)
+
+            # rbbox = RotatedBoxList(torch.cat(box_list), self.size, mode='xywha')
+            # rbbox._copy_extra_fields(self)
+            # return rbbox
         else:
             raise NotImplementedError
-        # for k, v in self.extra_fields.items():
-        #     if not isinstance(v, torch.Tensor):
-        #         v = v.crop(box)
-        #     bbox.add_field(k, v)
-
 
     def resize(self, size, *args, **kwargs):
         """
@@ -200,6 +224,7 @@ class RotatedBoxList(object):
             transposed_h = h
             transposed_ang = ang * -1
         elif method == FLIP_TOP_BOTTOM:
+            TO_REMOVE = 1
             transposed_x = x
             transposed_y = image_height - y - TO_REMOVE
             transposed_w = w
@@ -231,8 +256,42 @@ class RotatedBoxList(object):
         x_s = tmp_box[:, 0::2]
         y_s = tmp_box[:, 1::2]
         keep = (x_s >= 0) & (y_s >= 0) & (x_s <= self.size[0]) & (y_s <= self.size[1])
-        keep = keep[:, 0] & keep [:, 1] & keep[:, 2] & keep [:, 3]
+        keep = keep[:, 0] & keep[:, 1] & keep[:, 2] & keep[:, 3]
         return self[keep]
+
+    def rotate(self, ang):
+        # ang is 0~360 in degrees
+        device = self.rbbox.device
+        assert self.mode == "xywha"
+        x_s = self.rbbox[:, 0] - self.size[0] / 2
+        y_s = self.size[1] / 2 - self.rbbox[:, 1]
+
+        rad = torch.as_tensor(ang * pi / 180, dtype=torch.float32, device=device)
+        transform_matrix_1 = torch.stack((torch.cos(rad), -torch.sin(rad)), dim=0)
+        transform_matrix_2 = torch.stack((torch.sin(rad), torch.cos(rad)), dim=0)
+        transform_matrix = torch.stack((transform_matrix_1, transform_matrix_2), dim=0)
+
+        pre_loc = torch.stack((x_s, y_s), dim=1)
+        pre_loc = torch.as_tensor(pre_loc, device=self.rbbox.device)
+        points = torch.bmm(transform_matrix[None].expand(len(pre_loc), -1, -1), pre_loc[:, :, None])
+        new_x = points[:, 0, :].reshape(-1) + self.size[0] / 2
+        new_y = self.size[1] / 2 - points[:, 1, :].reshape(-1)
+
+        ang = torch.as_tensor(ang, dtype=torch.float32, device=device)
+        new_ang = ang + -1 * self.rbbox[:, -1] * 180 / pi
+        new_ang[new_ang > 0] = new_ang[new_ang > 0] % 180
+        new_ang[new_ang > 90] = new_ang[new_ang > 90] - 180
+        new_ang = -1 * new_ang * pi / 180
+
+        rbox_list = torch.stack((new_x, new_y, self.rbbox[:, 2], self.rbbox[:, 3], new_ang), dim=1)
+        rbbox = RotatedBoxList(rbox_list, self.size, mode="xywha")
+
+        # bbox._copy_extra_fields(self)
+        for k, v in self.extra_fields.items():
+            if not isinstance(v, torch.Tensor):
+                v = v.rotate()
+            rbbox.add_field(k, v)
+        return rbbox.convert(self.mode)
 
     def area(self):
         rbox = self.rbbox
@@ -278,15 +337,17 @@ if __name__ == "__main__":
         (1172, 816)
     )
 
-    r_bbox = bbox.remove_outside_image()
+    rm_bbox = bbox.remove_outside_image()
 
     # print(bbox.get_bbox_xyxy())
     # print("==========")
     # print(bbox.get_bbox_xywh())
 
-
     p_bbox = bbox.convert('poly')
     print(p_bbox.rbbox)
+
+    ro_bbox = bbox.rotate(20)
+    print(ro_bbox.rbbox)
 
     s_bbox = bbox.resize((50, 50))
     print(s_bbox)

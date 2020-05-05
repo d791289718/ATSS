@@ -32,6 +32,8 @@ def build_transforms(cfg, is_train=True):
             # ! 不对图像resize处理
             # T.Resize(min_size, max_size),
             T.RandomHorizontalFlip(flip_prob),
+            T.RandomVerticalFlip(flip_prob),
+            T.RandomRotate(),
             T.ToTensor(),
             normalize_transform,
         ]

@@ -70,7 +70,7 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
             v: k for k, v in self.json_category_id_to_contiguous_id.items()
         }
         self.id_to_img_map = {k: v for k, v in enumerate(self.ids)}
-        self._transforms = transforms
+        self._transforms = transforms  # 因为Dataset有内置的transforms会在getitem里执行
         self.is_rotated = is_rotated
 
     def __getitem__(self, idx):

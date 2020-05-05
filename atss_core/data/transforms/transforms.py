@@ -77,6 +77,37 @@ class RandomHorizontalFlip(object):
         return image, target
 
 
+class RandomVerticalFlip(object):
+    def __init__(self, prob=0.5):
+        self.prob = prob
+
+    def __call__(self, image, target):
+        if random.random() < self.prob:
+            image = F.vflip(image)
+            target = target.transpose(1)
+        return image, target
+
+
+class RandomRotate(object):
+    def __call__(self, image, target):
+        ang = 360 * random.random()
+        image = F.rotate(image, ang)
+        target = target.rotate(ang)
+        return image, target
+
+
+class RandomColor(object):
+    def __init__(self, scale=0.4):
+        self.scale = scale
+
+    def __call__(self, image, target):
+        image = F.adjust_brightness(image, random.uniform(1-self.scale, 1+self.scale))
+        image = F.adjust_contrast(image, random.uniform(1-self.scale, 1+self.scale))
+        image = F.adjust_saturation(image, random.uniform(1-self.scale, 1+self.scale))
+        # image = F.adjust_hue(image, random.uniform(self.scale, self.scale))
+        image = F.adjust_gamma(image, random.uniform(1-self.scale, 1+self.scale))
+        return image, target
+
 class ToTensor(object):
     def __call__(self, image, target):
         return F.to_tensor(image), target
