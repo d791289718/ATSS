@@ -163,7 +163,7 @@ class FCOSHead(torch.nn.Module):
             # bbox_reg.append(F.relu(bbox_pred))
 
             if is_rotated:
-            # angle
+                # angle
                 ang_pred = self.ang_pred(box_tower)
                 ang_reg.append(torch.tanh(ang_pred) * (math.pi)/2.)
 

@@ -119,6 +119,7 @@ class COCODataset(torchvision.datasets.coco.CocoDetection):
                 img, target = self._transforms(img, target)
             else:
                 img, rtarget = self._transforms(img, rtarget)
+        rtarget = rtarget.remove_outside_image()
 
         return img, target, rtarget, idx
 

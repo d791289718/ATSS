@@ -108,6 +108,7 @@ class RandomColor(object):
         image = F.adjust_gamma(image, random.uniform(1-self.scale, 1+self.scale))
         return image, target
 
+
 class ToTensor(object):
     def __call__(self, image, target):
         return F.to_tensor(image), target

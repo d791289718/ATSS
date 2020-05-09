@@ -27,15 +27,26 @@ def build_transforms(cfg, is_train=True):
         mean=cfg.INPUT.PIXEL_MEAN, std=cfg.INPUT.PIXEL_STD, to_bgr255=to_bgr255
     )
 
-    transform = T.Compose(
-        [
-            # ! 不对图像resize处理
-            # T.Resize(min_size, max_size),
-            T.RandomHorizontalFlip(flip_prob),
-            T.RandomVerticalFlip(flip_prob),
-            T.RandomRotate(),
-            T.ToTensor(),
-            normalize_transform,
-        ]
+    if is_train:
+        transform = T.Compose(
+            [
+                # ! 不对图像resize处理
+                # T.Resize(min_size, max_size),
+                T.RandomColor(0.4),
+                T.RandomHorizontalFlip(flip_prob),
+                T.RandomVerticalFlip(flip_prob),
+                T.RandomRotate(),
+                T.ToTensor(),
+                normalize_transform,
+            ]
+        )
+    else:
+        transform = T.Compose(
+            [
+                # ! 不对图像resize处理
+                # T.Resize(min_size, max_size),
+                T.ToTensor(),
+                normalize_transform,
+            ]
         )
     return transform

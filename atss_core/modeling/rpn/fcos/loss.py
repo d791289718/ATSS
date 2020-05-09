@@ -175,7 +175,6 @@ class FCOSLossComputation(object):
                 ], dim=0)
                 ang_targets_level_first.append(ang_targets_per_level)
 
-
             return labels_level_first, reg_targets_level_first, ang_targets_level_first
 
         return labels_level_first, reg_targets_level_first, None
@@ -191,6 +190,13 @@ class FCOSLossComputation(object):
             targets_per_im = rtargets[im_i]
             assert targets_per_im.mode == "xywha"
             bboxes = targets_per_im.rbbox
+
+            if len(bboxes) == 0:
+                labels.append(torch.zeros(len(locations), dtype=torch.long, device=bboxes.device))
+                reg_targets.append(torch.zeros(len(locations), 4, dtype=torch.float32, device=bboxes.device))
+                ang_targets.append(torch.zeros(len(locations), dtype=torch.float32, device=bboxes.device))
+                continue
+
             labels_per_im = targets_per_im.get_field("labels")
             area = targets_per_im.area()
 
@@ -201,7 +207,7 @@ class FCOSLossComputation(object):
 
             reg_targets_per_im = torch.stack([l, t, r, b], dim=2)
 
-            ang_targets_per_im = bboxes[:, 4][None].expand(len(locations), -1)  #预测的是与x夹角绝对值
+            ang_targets_per_im = bboxes[:, 4][None].expand(len(locations), -1)  # 预测的是与x夹角绝对值
 
             # TODO: rotated
             if self.center_sampling_radius > 0:
@@ -325,6 +331,28 @@ class FCOSLossComputation(object):
         """
         N = box_cls[0].size(0)  # batch的样本数目
         num_classes = box_cls[0].size(1)
+        # if len(rtargets.rbbox) == 0 & is_rotated:
+        #     # num_gpus = get_num_gpus()
+        #     # # sync num_pos from all gpus
+        #     # total_num_pos = reduce_sum(pos_inds.new_tensor([pos_inds.numel()])).item()
+        #     # num_pos_avg_per_gpu = max(total_num_pos / float(num_gpus), 1.0)
+
+        #     box_cls_flatten = []
+        #     for l in range(len(box_cls)):
+        #         box_cls_flatten.append(box_cls[l].permute(0, 2, 3, 1).reshape(-1, num_classes))
+        #     box_cls_flatten = torch.cat(box_cls_flatten, dim=0)
+        #     labels_flatten = box_cls_flatten.new_zeros(box_cls_flatten.size())
+        #     # focal loss
+        #     # cls_loss = self.cls_loss_func(
+        #     #     box_cls_flatten,
+        #     #     labels_flatten.int()
+        #     # ) / num_pos_avg_per_gpu
+
+        #     reg_loss = cls_loss.new_zeros(1)
+        #     ang_loss = cls_loss.new_zeros(1)
+        #     centerness_loss = cls_loss.new_zeros(1)
+        #     return cls_loss, reg_loss, ang_loss, centerness_loss
+
         labels, reg_targets, ang_targets = self.prepare_targets(
             locations, targets, rtargets, is_rotated)
 
