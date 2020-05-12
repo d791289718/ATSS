@@ -108,7 +108,6 @@ class FCOSLossComputation(object):
     def get_rotated_sample_region(self, gt, strides, num_points_per, gt_xs, gt_ys, radius=1.0, mode='constant'):
         num_gts = gt.shape[0]
         K = len(gt_xs)
-
         # convert gt_xs gt_ys to rotated axis [num_points, num_targets]
         ang = gt[..., 4]
         ro_xs = torch.cos(ang)[None] * gt_xs[:, None] - torch.sin(ang)[None] * gt_ys[:, None]
