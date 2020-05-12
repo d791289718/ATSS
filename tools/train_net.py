@@ -98,6 +98,7 @@ def train(cfg, local_rank, distributed):
         checkpoint_period,
         arguments,
         cfg.INPUT.ROTATED,
+        cfg,
     )
 
     return model

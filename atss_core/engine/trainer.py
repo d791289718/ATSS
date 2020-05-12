@@ -5,11 +5,19 @@ import time
 from collections import defaultdict
  
 import torch
+import os
 import torch.distributed as dist
 from torch.utils.tensorboard import SummaryWriter
 
 from atss_core.utils.comm import get_world_size, is_pytorch_1_1_0_or_later
 from atss_core.utils.metric_logger import MetricLogger
+from atss_core.config import cfg
+from atss_core.data.datasets.evaluation import evaluate
+from ..utils.comm import is_main_process
+from ..utils.comm import all_gather
+from ..utils.comm import synchronize
+from .bbox_aug import im_detect_bbox_aug
+from .bbox_aug_vote import im_detect_bbox_aug_vote
 
 
 def reduce_loss_dict(loss_dict):
@@ -62,6 +70,88 @@ def do_validation(model, data_loader_val, device, is_rotated):
     return val_loss, val_loss_dict_reduced, total_val_time
 
 
+def compute_on_dataset(model, data_loader, device, timer=None):
+    model.eval()
+    results_dict = {}
+    cpu_device = torch.device("cpu")
+    for _, batch in enumerate(data_loader):
+        images, tatgets, rtargets, image_ids = batch
+        with torch.no_grad():
+            if timer:
+                timer.tic()
+            # bbox_aug
+            if cfg.TEST.BBOX_AUG.ENABLED:
+                if cfg.TEST.BBOX_AUG.VOTE:
+                    output = im_detect_bbox_aug_vote(model, images, device)
+                else:
+                    output = im_detect_bbox_aug(model, images, device)
+            else:
+                output = model(images.to(device))
+            if timer:
+                torch.cuda.synchronize()
+                timer.toc()
+            output = [o.to(cpu_device) for o in output]
+        results_dict.update(
+            {img_id: result for img_id, result in zip(image_ids, output)}
+        )
+    return results_dict
+
+
+def _accumulate_predictions_from_multiple_gpus(predictions_per_gpu):
+    all_predictions = all_gather(predictions_per_gpu)
+    if not is_main_process():
+        return
+    # merge the list of dicts
+    predictions = {}
+    for p in all_predictions:
+        predictions.update(p)
+    # convert a dict where the key is the index in a list
+    image_ids = list(sorted(predictions.keys()))
+    if len(image_ids) != image_ids[-1] + 1:
+        logger = logging.getLogger("atss_core.inference")
+        logger.warning(
+            "Number of images that were gathered from multiple processes is not "
+            "a contiguous set. Some images might be missing from the evaluation"
+        )
+
+    # convert to a list
+    predictions = [predictions[i] for i in image_ids]
+    return predictions
+
+
+def get_APs(model, data_loader_val, device, is_rotated, cfg, iteration):
+    iou_types = ("segm",)
+    dataset = data_loader_val[0].dataset
+
+    predictions = compute_on_dataset(model, data_loader_val[0], device)
+    synchronize()
+
+    predictions = _accumulate_predictions_from_multiple_gpus(predictions)
+
+    if not is_main_process():
+        return
+    output_folder = [None]
+    if cfg.OUTPUT_DIR:
+        output_folder = os.path.join(cfg.OUTPUT_DIR, "inference", cfg.DATASETS.TEST[0], str(iteration))
+    if output_folder:
+        torch.save(predictions, os.path.join(output_folder, "predictions.pth"))
+
+    extra_args = dict(
+        box_only=False if cfg.MODEL.ATSS_ON or cfg.MODEL.FCOS_ON or cfg.MODEL.RETINANET_ON else cfg.MODEL.RPN_ONLY,
+        iou_types=iou_types,
+        expected_results=cfg.TEST.EXPECTED_RESULTS,
+        expected_results_sigma_tol=cfg.TEST.EXPECTED_RESULTS_SIGMA_TOL,
+    )
+    # 到这里是得到了预测的RotatedBoxList的结果，下面要和gt作比较了
+    results, coco_results = evaluate(
+        dataset=dataset,
+        predictions=predictions,
+        output_folder=output_folder,
+        is_rotated=is_rotated,
+        **extra_args)
+    return coco_results.results[iou_types]
+
+
 def do_train(
     model,
     data_loader,
@@ -73,6 +163,7 @@ def do_train(
     checkpoint_period,
     arguments,
     is_rotated,
+    cfg
 ):
     logger = logging.getLogger("atss_core.trainer")
     logger.info("Start training")
@@ -168,7 +259,11 @@ def do_train(
             )
 
         if iteration % checkpoint_period == 0:
-            checkpointer.save("model_{:07d}".format(iteration), **arguments)
+            coco_redict = get_APs(model, data_loader_val, device, is_rotated, cfg, iteration)
+            writer.add_scalars(
+                "APs", coco_redict, iteration
+            )
+            checkpointer.save("model_{:07d}".format(iteration), **arguments)   
         if iteration == max_iter:
             checkpointer.save("model_final", **arguments)
 

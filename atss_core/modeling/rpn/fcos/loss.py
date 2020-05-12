@@ -109,9 +109,11 @@ class FCOSLossComputation(object):
         num_gts = gt.shape[0]
         K = len(gt_xs)
         # convert gt_xs gt_ys to rotated axis [num_points, num_targets]
-        ang = gt[..., 4]
-        ro_xs = torch.cos(ang)[None] * gt_xs[:, None] - torch.sin(ang)[None] * gt_ys[:, None]
-        ro_ys = torch.sin(ang)[None] * gt_xs[:, None] + torch.cos(ang)[None] * gt_ys[:, None]
+        gt_dx = gt_xs[:, None] - gt[..., 0][None]
+        gt_dy = gt_ys[:, None] - gt[..., 1][None]
+        ang = -gt[..., 4][None]
+        ro_xs = torch.cos(ang) * gt_dx - torch.sin(ang) * gt_dy
+        ro_ys = torch.sin(ang) * gt_dx + torch.cos(ang) * gt_dy
 
         gt = gt[None].expand(K, num_gts, 5)
         # all the Xs Ys are in rotated axis
@@ -269,6 +271,14 @@ class FCOSLossComputation(object):
                     radius=self.center_sampling_radius,
                     mode=self.center_sampling_mode
                 )
+
+                # test_is_in_boxes = self.get_sample_region(
+                #     targets_per_im.get_bbox_xyxy(),
+                #     self.fpn_strides,
+                #     self.num_points_per_level,
+                #     xs, ys,
+                #     radius=self.center_sampling_radius,
+                # )
             else:
                 # no center sampling, it will use all the locations within a ground-truth box
                 is_in_boxes = reg_targets_per_im.min(dim=2)[0] > 0
