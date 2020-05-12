@@ -53,11 +53,14 @@ def convert_to_ltrb(xs, ys, xc, yc, w, h, ang):
     dx = xs - xc
     dy = ys - yc
 
+    flip = xs.new_ones(1, num_box)
+    flip[ang > 0] = -1
+
     pre_loc = torch.stack((dx, dy), dim=2)
 
     # 旋转矩阵
     ang = ang[0] * -1
-    transform_matrix_1 = torch.stack((torch.cos(ang), -torch.sin(ang)), dim=1)
+    transform_matrix_1 = torch.stack((torch.cos(ang), -1*torch.sin(ang)), dim=1)
     transform_matrix_2 = torch.stack((torch.sin(ang), torch.cos(ang)), dim=1)
     transform_matrix = torch.stack((transform_matrix_1, transform_matrix_2), dim=1)
 
@@ -67,14 +70,13 @@ def convert_to_ltrb(xs, ys, xc, yc, w, h, ang):
     locations = torch.bmm(transform_matrix, pre_loc)
     locations = locations.reshape(num_point, num_box, 2)
 
-    rotated_loc_x = locations[:, :, 0]
-    rotated_loc_y = locations[:, :, 1]
+    rotated_loc_x = locations[:, :, 0] * flip
+    rotated_loc_y = locations[:, :, 1] * flip
 
-    l = h / 2. - rotated_loc_y
-    t = w / 2. - rotated_loc_x
-    r = rotated_loc_y + h / 2.
-    b = rotated_loc_x + w / 2.
-
+    l = h/2. - rotated_loc_y
+    t = w/2. - rotated_loc_x
+    r = rotated_loc_y + h/2.
+    b = rotated_loc_x + w/2.
     return l, t, r, b
 
 
@@ -83,19 +85,22 @@ def convert_to_rbox(l, t, r, b, ang, xs, ys, image_sizes):
     l,t,r,b,ang,xs,xy dim = 1
     return RotatedBoxlist
     """
-    img_h, img_w = image_sizes  # imagelist的size是(h, w)
+    img_h, img_w = image_sizes # imagelist的size是(h, w)
     if len(ang) == 0:
-        return RotatedBoxList(
-            torch.tensor([], device=ang.device), (int(img_w), int(img_h)), mode="xywha")
+        return RotatedBoxList(torch.tensor([], device=ang.device),
+        (int(img_w), int(img_h)), mode="xywha")
     h = l + r
     w = t + b
 
-    pre_xc = (t - b) / 2.
-    pre_yc = (l - r) / 2.
+    flip = ang.new_ones(ang.size())
+    flip[ang > 0] = -1
+
+    pre_xc = (t - b) / 2. * flip
+    pre_yc = (l - r) / 2. * flip
     pre_loc = torch.stack((pre_xc, pre_yc), dim=1)
 
-    transform_matrix_1 = torch.stack((torch.cos(ang), -torch.sin(ang)), dim=1)
-    transform_matrix_2 = torch.stack((torch.sin(ang), torch.cos(ang)), dim=1)
+    transform_matrix_1 = torch.stack((torch.cos(-ang), -torch.sin(-ang)), dim=1)
+    transform_matrix_2 = torch.stack((torch.sin(-ang), torch.cos(-ang)), dim=1)
     transform_matrix = torch.stack((transform_matrix_1, transform_matrix_2), dim=1)
 
     locations = torch.bmm(transform_matrix, pre_loc[:, :, None])
@@ -104,7 +109,7 @@ def convert_to_rbox(l, t, r, b, ang, xs, ys, image_sizes):
     dx = locations[:, 0]
     dy = locations[:, 1]
     xc = xs + dx
-    yc = ys + dy
+    yc = ys - dy  # 因为和图像中的纵坐标走向不一样
 
     rboxes = torch.stack((xc, yc, w, h, ang), dim=1)
     rboxlist = RotatedBoxList(rboxes, (int(img_w), int(img_h)), mode="xywha")

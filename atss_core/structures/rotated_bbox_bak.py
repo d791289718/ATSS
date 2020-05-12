@@ -60,9 +60,9 @@ class RotatedBoxList(object):
 
     def _get_transform_matrix(self, mode):
         if mode == "r2h":
-            ang = self.rbbox[:, -1] * -1
-        elif mode == "h2r":
             ang = self.rbbox[:, -1]
+        elif mode == "h2r":
+            ang = self.rbbox[:, -1] * -1
         else:
             raise ValueError(
                 "transform matrix mode has to be r2h or h2r, got {}".format(mode))
@@ -107,7 +107,7 @@ class RotatedBoxList(object):
             if len(self.rbbox) == 0:
                 return self
             # 旋转矩阵
-            transform_matrix = self._get_transform_matrix("h2r")
+            transform_matrix = self._get_transform_matrix("r2h")
 
             poly_list = []
             for rbox, matrix in zip(self.rbbox, transform_matrix):
@@ -300,9 +300,9 @@ class RotatedBoxList(object):
         x_s = self.rbbox[:, 0] - self.size[0] / 2
         y_s = self.rbbox[:, 1] - self.size[1] / 2
 
-        rad = torch.as_tensor(-ang * pi / 180, dtype=torch.float32, device=device)
-        transform_matrix_1 = torch.stack((torch.cos(rad), -torch.sin(rad)), dim=0)
-        transform_matrix_2 = torch.stack((torch.sin(rad), torch.cos(rad)), dim=0)
+        rad = torch.as_tensor(ang * pi / 180, dtype=torch.float32, device=device)
+        transform_matrix_1 = torch.stack((torch.cos(-rad), -torch.sin(-rad)), dim=0)
+        transform_matrix_2 = torch.stack((torch.sin(-rad), torch.cos(-rad)), dim=0)
         transform_matrix = torch.stack((transform_matrix_1, transform_matrix_2), dim=0)
 
         pre_loc = torch.stack((x_s, y_s), dim=1)
