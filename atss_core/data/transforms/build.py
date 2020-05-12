@@ -35,7 +35,7 @@ def build_transforms(cfg, is_train=True):
                 T.RandomColor(0.4),
                 T.RandomHorizontalFlip(flip_prob),
                 T.RandomVerticalFlip(flip_prob),
-                T.RandomRotate(),
+                # T.RandomRotate(),
                 T.ToTensor(),
                 normalize_transform,
             ]

@@ -10,6 +10,8 @@ MODEL:
     BACKBONE_OUT_CHANNELS: 256
   RETINANET:
     USE_C5: True # FCOS uses P5 instead of C5
+  FCOS:
+    CENTER_SAMPLING_RADIUS: 1.5
 DATASETS:
   TRAIN: ("HRSC_test", )
   TEST: ("HRSC_val", )

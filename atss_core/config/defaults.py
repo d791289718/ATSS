@@ -351,6 +351,7 @@ _C.MODEL.FCOS.NUM_CONVS = 4
 
 # if CENTER_SAMPLING_RADIUS <= 0, it will disable center sampling
 _C.MODEL.FCOS.CENTER_SAMPLING_RADIUS = 0.0
+_C.MODEL.FCOS.CENTER_SAMPLING_MODE = 'constant'
 # IOU_LOSS_TYPE can be "iou", "linear_iou" or "giou"
 _C.MODEL.FCOS.IOU_LOSS_TYPE = "iou"
 

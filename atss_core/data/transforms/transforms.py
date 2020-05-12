@@ -89,10 +89,24 @@ class RandomVerticalFlip(object):
 
 
 class RandomRotate(object):
+    def __init__(self, is_orig_size=True, is_random=False):
+        self.is_orig_size = is_orig_size
+        self.is_random = is_random
+
     def __call__(self, image, target):
-        ang = 360 * random.random()
-        image = F.rotate(image, ang)
-        target = target.rotate(ang)
+        if self.is_random:
+            ang = 360 * random.random()
+        else:
+            ang_choices = [0, 90, 180, 270]
+            random.shuffle(ang_choices)
+            ang = ang_choices[0]
+
+        if self.is_orig_size:
+            image = F.rotate(image, ang)
+            target = target.rotate(ang)
+        else:
+            image = F.rotate(image, ang)
+            target = target.rotate_with_new_size(ang, image.size[0], image.size[1])
         return image, target
 
 

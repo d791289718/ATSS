@@ -47,6 +47,7 @@ class FCOSLossComputation(object):
         )
         self.fpn_strides = cfg.MODEL.FCOS.FPN_STRIDES
         self.center_sampling_radius = cfg.MODEL.FCOS.CENTER_SAMPLING_RADIUS
+        self.center_sampling_mode = cfg.MODEL.FCOS.CENTER_SAMPLING_MODE
         self.iou_loss_type = cfg.MODEL.FCOS.IOU_LOSS_TYPE
         self.norm_reg_targets = cfg.MODEL.FCOS.NORM_REG_TARGETS
 
@@ -83,23 +84,74 @@ class FCOSLossComputation(object):
             # limit sample region in gt
             center_gt[beg:end, :, 0] = torch.where(
                 xmin > gt[beg:end, :, 0], xmin, gt[beg:end, :, 0]
-            )
+            ) # larger
             center_gt[beg:end, :, 1] = torch.where(
                 ymin > gt[beg:end, :, 1], ymin, gt[beg:end, :, 1]
-            )
+            ) # larger
             center_gt[beg:end, :, 2] = torch.where(
                 xmax > gt[beg:end, :, 2],
                 gt[beg:end, :, 2], xmax
-            )
+            ) # smaller
             center_gt[beg:end, :, 3] = torch.where(
                 ymax > gt[beg:end, :, 3],
                 gt[beg:end, :, 3], ymax
-            )
+            ) # smaller
             beg = end
         left = gt_xs[:, None] - center_gt[..., 0]
         right = center_gt[..., 2] - gt_xs[:, None]
         top = gt_ys[:, None] - center_gt[..., 1]
         bottom = center_gt[..., 3] - gt_ys[:, None]
+        center_bbox = torch.stack((left, top, right, bottom), -1)
+        inside_gt_bbox_mask = center_bbox.min(-1)[0] > 0
+        return inside_gt_bbox_mask
+
+    def get_rotated_sample_region(self, gt, strides, num_points_per, gt_xs, gt_ys, radius=1.0, mode='constant'):
+        num_gts = gt.shape[0]
+        K = len(gt_xs)
+
+        # convert gt_xs gt_ys to rotated axis [num_points, num_targets]
+        ang = gt[..., 4]
+        ro_xs = torch.cos(ang)[None] * gt_xs[:, None] - torch.sin(ang)[None] * gt_ys[:, None]
+        ro_ys = torch.sin(ang)[None] * gt_xs[:, None] + torch.cos(ang)[None] * gt_ys[:, None]
+
+        gt = gt[None].expand(K, num_gts, 5)
+        # all the Xs Ys are in rotated axis
+        center_w = gt[..., 2] / 2.
+        center_h = gt[..., 3] / 2.
+        center_gt = gt.new_zeros(K, num_gts, 4)
+        # no gt
+        if center_w[..., 0].sum() == 0:
+            return gt_xs.new_zeros(gt_xs.shape, dtype=torch.uint8)
+        if mode == 'constant':
+            beg = 0
+            for level, n_p in enumerate(num_points_per):
+                end = beg + n_p
+                stride = strides[level] * radius
+                stride = gt.new_ones(n_p, num_gts) * stride
+                # limit sample region in gt
+                center_gt[beg:end, :, 0] = torch.where(
+                    -stride > -center_w[beg:end, :], -stride, -center_w[beg:end, :]
+                )  # larger
+                center_gt[beg:end, :, 1] = torch.where(
+                    -stride > -center_h[beg:end, :], -stride, -center_h[beg:end, :]
+                )
+                center_gt[beg:end, :, 2] = torch.where(
+                    stride < center_w[beg:end, :], stride, center_w[beg:end, :]
+                )
+                center_gt[beg:end, :, 3] = torch.where(
+                    stride < center_h[beg:end, :], stride, center_h[beg:end, :]
+                )
+                beg = end
+        elif mode == 'ratio':
+            # limit sample region in gt
+            center_gt[:, :, 0] = -center_w[:, :] * radius
+            center_gt[:, :, 1] = -center_h[:, :] * radius
+            center_gt[:, :, 2] = center_w[:, :] * radius
+            center_gt[:, :, 3] = center_h[:, :] * radius
+        left = ro_xs - center_gt[..., 0]
+        right = center_gt[..., 2] - ro_xs
+        top = ro_ys - center_gt[..., 1]
+        bottom = center_gt[..., 3] - ro_ys
         center_bbox = torch.stack((left, top, right, bottom), -1)
         inside_gt_bbox_mask = center_bbox.min(-1)[0] > 0
         return inside_gt_bbox_mask
@@ -209,14 +261,14 @@ class FCOSLossComputation(object):
 
             ang_targets_per_im = bboxes[:, 4][None].expand(len(locations), -1)  # 预测的是与x夹角绝对值
 
-            # TODO: rotated
             if self.center_sampling_radius > 0:
-                is_in_boxes = self.get_sample_region(
+                is_in_boxes = self.get_rotated_sample_region(
                     bboxes,
                     self.fpn_strides,
                     self.num_points_per_level,
                     xs, ys,
-                    radius=self.center_sampling_radius
+                    radius=self.center_sampling_radius,
+                    mode=self.center_sampling_mode
                 )
             else:
                 # no center sampling, it will use all the locations within a ground-truth box
@@ -452,7 +504,7 @@ class FCOSLossComputation(object):
                 ang_loss = ang_regression_flatten.sum()
             else:
                 ang_loss = None
-
+        ang_loss = ang_loss * 10
         return cls_loss, reg_loss, ang_loss, centerness_loss
 
 

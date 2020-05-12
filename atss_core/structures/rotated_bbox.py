@@ -293,6 +293,41 @@ class RotatedBoxList(object):
             rbbox.add_field(k, v)
         return rbbox.convert(self.mode)
 
+    def rotate_with_new_size(self, ang, new_w, new_h):
+        # ang is 0~360 in degrees
+        device = self.rbbox.device
+        assert self.mode == "xywha"
+        x_s = self.rbbox[:, 0] - self.size[0] / 2
+        y_s = self.rbbox[:, 1] - self.size[1] / 2
+
+        rad = torch.as_tensor(ang * pi / 180, dtype=torch.float32, device=device)
+        transform_matrix_1 = torch.stack((torch.cos(-rad), -torch.sin(-rad)), dim=0)
+        transform_matrix_2 = torch.stack((torch.sin(-rad), torch.cos(-rad)), dim=0)
+        transform_matrix = torch.stack((transform_matrix_1, transform_matrix_2), dim=0)
+
+        pre_loc = torch.stack((x_s, y_s), dim=1)
+        pre_loc = torch.as_tensor(pre_loc, device=self.rbbox.device)
+        points = torch.bmm(transform_matrix[None].expand(len(pre_loc), -1, -1), pre_loc[:, :, None])
+
+        new_x = points[:, 0, :].reshape(-1) + new_w / 2
+        new_y = points[:, 1, :].reshape(-1) + new_h / 2
+
+        ang = torch.as_tensor(ang, dtype=torch.float32, device=device)
+        new_ang = ang + -1 * self.rbbox[:, -1] * 180 / pi
+        new_ang[new_ang > 0] = new_ang[new_ang > 0] % 180
+        new_ang[new_ang > 90] = new_ang[new_ang > 90] - 180
+        new_ang = -1 * new_ang * pi / 180
+
+        rbox_list = torch.stack((new_x, new_y, self.rbbox[:, 2], self.rbbox[:, 3], new_ang), dim=1)
+        rbbox = RotatedBoxList(rbox_list, self.size, mode="xywha")
+
+        # bbox._copy_extra_fields(self)
+        for k, v in self.extra_fields.items():
+            if not isinstance(v, torch.Tensor):
+                v = v.rotate()
+            rbbox.add_field(k, v)
+        return rbbox.convert(self.mode)
+
     def area(self):
         rbox = self.rbbox
         if self.mode == "xywha":
