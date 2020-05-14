@@ -13,6 +13,7 @@ from atss_core.utils.comm import get_world_size, is_pytorch_1_1_0_or_later
 from atss_core.utils.metric_logger import MetricLogger
 from atss_core.config import cfg
 from atss_core.data.datasets.evaluation import evaluate
+from atss_core.utils.miscellaneous import mkdir
 from ..utils.comm import is_main_process
 from ..utils.comm import all_gather
 from ..utils.comm import synchronize
@@ -133,6 +134,7 @@ def get_APs(model, data_loader_val, device, is_rotated, cfg, iteration):
     output_folder = [None]
     if cfg.OUTPUT_DIR:
         output_folder = os.path.join(cfg.OUTPUT_DIR, "inference", cfg.DATASETS.TEST[0], str(iteration))
+        mkdir(output_folder)
     if output_folder:
         torch.save(predictions, os.path.join(output_folder, "predictions.pth"))
 
@@ -149,7 +151,7 @@ def get_APs(model, data_loader_val, device, is_rotated, cfg, iteration):
         output_folder=output_folder,
         is_rotated=is_rotated,
         **extra_args)
-    return coco_results.results[iou_types]
+    return results.results[iou_types]
 
 
 def do_train(
@@ -178,7 +180,7 @@ def do_train(
     # pytorch_1_1_0_or_later = is_pytorch_1_1_0_or_later()
     pytorch_1_1_0_or_later = True
     # tensorboard
-    writer = SummaryWriter()
+    writer = SummaryWriter(os.path.join('runs', cfg.OUTPUT_DIR,))
 
     for iteration, (images, targets, rtargets, _) in enumerate(data_loader, start_iter):  # dim=0上遍历
         # images, targets 是每个batch的 Tensor
@@ -259,11 +261,12 @@ def do_train(
             )
 
         if iteration % checkpoint_period == 0:
+            checkpointer.save("model_{:07d}".format(iteration), **arguments)
             coco_redict = get_APs(model, data_loader_val, device, is_rotated, cfg, iteration)
             writer.add_scalars(
                 "APs", coco_redict, iteration
             )
-            checkpointer.save("model_{:07d}".format(iteration), **arguments)   
+               
         if iteration == max_iter:
             checkpointer.save("model_final", **arguments)
 

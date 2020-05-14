@@ -78,7 +78,6 @@ def do_coco_evaluation(
 
 def prepare_for_coco_rotated_detection(predictions, dataset):
     import pycocotools.mask as mask_util
-    import numpy as np
 
     coco_results = []
     for image_id, prediction in tqdm(enumerate(predictions)):

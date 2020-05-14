@@ -25,15 +25,16 @@ class RotatedBoxList(object):
 
         # 确保rbbox的dim=2，最后一维size=5，mode为正确的mode
         # ! 允许空的构建
-        if rbbox.ndimension() != 2:
-            raise ValueError(
-                "Rotatedbbox should have 2 dimensions, got {}".format(rbbox.ndimension())
-            )
-        if rbbox.size(-1) != 5 and rbbox.size(-1) != 8:
-            raise ValueError(
-                "last dimension of Rotatedbbox should have a "
-                "size of 5 or 8, got {}".format(rbbox.size(-1))
-            )
+        if len(rbbox) != 0:
+            if rbbox.ndimension() != 2:
+                raise ValueError(
+                    "Rotatedbbox should have 2 dimensions, got {}".format(rbbox.ndimension())
+                )
+            if rbbox.size(-1) != 5 and rbbox.size(-1) != 8:
+                raise ValueError(
+                    "last dimension of Rotatedbbox should have a "
+                    "size of 5 or 8, got {}".format(rbbox.size(-1))
+                )
         if mode not in ("xywha", "poly"):
             raise ValueError("mode should be 'xywha' or 'poly'")
 

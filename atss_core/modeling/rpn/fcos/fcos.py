@@ -139,7 +139,7 @@ class FCOSHead(torch.nn.Module):
             logits.append(self.cls_logits(cls_tower))
 
             # centerness
-            assert self.centerness_independent != self.centerness_on_reg, "centerness接在哪个tower下有问题"
+            # assert self.centerness_independent != self.centerness_on_reg, "centerness接在哪个tower下有问题"
             if self.centerness_on_reg:
                 centerness.append(self.centerness(box_tower))
             elif self.centerness_independent:
