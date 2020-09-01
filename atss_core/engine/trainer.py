@@ -151,7 +151,7 @@ def get_APs(model, data_loader_val, device, is_rotated, cfg, iteration):
         output_folder=output_folder,
         is_rotated=is_rotated,
         **extra_args)
-    return results.results[iou_types]
+    return results.results['segm']
 
 
 def do_train(
@@ -184,6 +184,7 @@ def do_train(
 
     for iteration, (images, targets, rtargets, _) in enumerate(data_loader, start_iter):  # dim=0上遍历
         # images, targets 是每个batch的 Tensor
+        model.train()
         data_time = time.time() - end
         iteration = iteration + 1
         arguments["iteration"] = iteration
@@ -262,10 +263,11 @@ def do_train(
 
         if iteration % checkpoint_period == 0:
             checkpointer.save("model_{:07d}".format(iteration), **arguments)
-            coco_redict = get_APs(model, data_loader_val, device, is_rotated, cfg, iteration)
-            writer.add_scalars(
-                "APs", coco_redict, iteration
-            )
+            # logger.info("AP: {} ".format(coco_redict))
+            # coco_redict = get_APs(model, data_loader_val, device, is_rotated, cfg, iteration)
+            # writer.add_scalars(
+            #     "APs", coco_redict, iteration
+            # )
                
         if iteration == max_iter:
             checkpointer.save("model_final", **arguments)

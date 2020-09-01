@@ -53,8 +53,8 @@ def build_resnet_fpn_p3p7_backbone(cfg):
     body = resnet.ResNet(cfg)
 
     # 参数
-    in_channels_stage2 = cfg.MODEL.RESNETS.RES2_OUT_CHANNELS
-    out_channels = cfg.MODEL.RESNETS.BACKBONE_OUT_CHANNELS
+    in_channels_stage2 = cfg.MODEL.RESNETS.RES2_OUT_CHANNELS  # 256
+    out_channels = cfg.MODEL.RESNETS.BACKBONE_OUT_CHANNELS  # 256 * 4
     in_channels_p6p7 = in_channels_stage2 * 8 if cfg.MODEL.RETINANET.USE_C5 \
         else out_channels
 

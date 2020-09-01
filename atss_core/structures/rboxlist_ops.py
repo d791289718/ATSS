@@ -194,9 +194,9 @@ def rboxlist_ml_nms(rboxlist, nms_thresh, max_proposals=-1,
     if isinstance(dets, torch.Tensor):
         dets = dets.cpu().numpy().astype(np.float64)
     if isinstance(nms_thresh, torch.Tensor):
-        nms_thresh = nms_thresh.cpu().numpy().astype(np.float64)
+        nms_thresh = nms_thresh.detach().numpy().astype(np.float64)
     if isinstance(scores, torch.Tensor):
-        scores = scores.cpu().numpy().astype(np.float64)
+        scores = scores.detach().numpy().astype(np.float64)
 
     # 准备工作
     x1 = np.min(dets[:, 0::2], axis=1)

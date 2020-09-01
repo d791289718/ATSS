@@ -151,7 +151,7 @@ class FCOSPostProcessor(torch.nn.Module):
         results = []
         for i in range(N):
             per_box_cls = box_cls[i]  # W*H, C
-            per_candidate_inds = candidate_inds[i]  # ! if == 0
+            per_candidate_inds = candidate_inds[i]
             per_box_cls = per_box_cls[per_candidate_inds]  # score: (num, )
 
             per_candidate_nonzeros = per_candidate_inds.nonzero()  # retuen tuple

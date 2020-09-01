@@ -24,7 +24,7 @@ class RotatedBoxList(object):
         rbbox = torch.as_tensor(rbbox, dtype=torch.float32, device=device)
 
         # 确保rbbox的dim=2，最后一维size=5，mode为正确的mode
-        # ! 允许空的构建
+        # 允许空的构建
         if len(rbbox) != 0:
             if rbbox.ndimension() != 2:
                 raise ValueError(

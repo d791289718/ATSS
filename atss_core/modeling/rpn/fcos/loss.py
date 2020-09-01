@@ -149,11 +149,21 @@ class FCOSLossComputation(object):
             center_gt[:, :, 1] = -center_h[:, :] * radius
             center_gt[:, :, 2] = center_w[:, :] * radius
             center_gt[:, :, 3] = center_h[:, :] * radius
-        left = ro_xs - center_gt[..., 0]
-        right = center_gt[..., 2] - ro_xs
-        top = ro_ys - center_gt[..., 1]
-        bottom = center_gt[..., 3] - ro_ys
+
+        # # test
+        # l, t, r, b = convert_to_ltrb(
+        #     gt_xs[:, None], gt_ys[:, None], test_gt[:, 0][None], test_gt[:, 1][None],
+        #     2 * center_gt[..., 2][None], 2 * center_gt[..., 3][None], test_gt[:, 4][None]
+        # )
+
+        # test_center_bbox = torch.stack((l, t, r, b), -1)
+        # test_inside_gt_bbox_mask = test_center_bbox.min(-1)[0] > 0
+        left = center_gt[..., 3] - ro_ys
+        right = ro_ys - center_gt[..., 1]
+        top = center_gt[..., 2] - ro_xs
+        bottom = ro_xs - center_gt[..., 0]
         center_bbox = torch.stack((left, top, right, bottom), -1)
+
         inside_gt_bbox_mask = center_bbox.min(-1)[0] > 0
         return inside_gt_bbox_mask
 
@@ -369,6 +379,15 @@ class FCOSLossComputation(object):
                       (top_bottom.min(dim=-1)[0] / top_bottom.max(dim=-1)[0])
         return torch.sqrt(centerness)
 
+    def compute_gaussian_targets(self, reg_targets):
+        l = reg_targets[:, 0]
+        t = reg_targets[:, 1]
+        r = reg_targets[:, 2]
+        b = reg_targets[:, 3]
+        w = t + b
+        h = l + r
+
+        return torch.exp(-0.5 * (((t - w / 2) / (w * 0.3))**2 + ((l - h / 2) / (h * 0.3))**2))
 
     def __call__(self, locations, box_cls, box_regression, ang_regression,
     centerness, targets, rtargets, is_rotated):
@@ -471,7 +490,7 @@ class FCOSLossComputation(object):
         ) / num_pos_avg_per_gpu
 
         if pos_inds.numel() > 0:
-            centerness_targets = self.compute_centerness_targets(reg_targets_flatten)
+            centerness_targets = self.compute_gaussian_targets(reg_targets_flatten)
 
             # average sum_centerness_targets from all gpus,
             # which is used to normalize centerness-weighed reg loss
@@ -513,7 +532,7 @@ class FCOSLossComputation(object):
                 ang_loss = ang_regression_flatten.sum()
             else:
                 ang_loss = None
-        ang_loss = ang_loss * 10
+
         return cls_loss, reg_loss, ang_loss, centerness_loss
 
 
